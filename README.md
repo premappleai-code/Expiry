@@ -419,6 +419,7 @@ select.remarksInput{
     <button class="secondary" id="billingImportBtn">Billing Import</button>
     <input type="file" id="billingFileInput" accept=".xlsx,.xls,.csv">
     <button class="ghost" id="exportAllBtn">Export CSV</button>
+    <button class="ghost" id="refreshDataBtn" title="Firebase बाट latest data ल्याउँछ — browser refresh गर्नु पर्दैन">🔄 Refresh Data</button>
     <span id="staffBadge" style="display:none;"></span>
   </div>
 </div>
@@ -583,6 +584,21 @@ select.remarksInput{
       </div>
     </div>
 
+    <div class="panel">
+      <div class="panel-head"><h2>Disable Age Summary <span class="sub" style="font-size:11px;color:var(--text-soft);">Days since expiry (disable) — 0-30 / 30-90 / 90+ days</span></h2></div>
+      <div class="panel-body">
+        <div class="scrollx">
+        <table>
+          <thead><tr>
+            <th>Disable Category</th><th class="ysd-num">Total</th><th class="ysd-num">Matched</th><th class="ysd-num">Remaining</th>
+            <th class="ysd-num">Match %</th><th style="width:180px">Progress</th>
+          </tr></thead>
+          <tbody id="ysdDisableCatTable"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
     <div class="ysd-grid2">
       <div class="panel">
         <div class="panel-head"><h2>Remaining — Create Year Category <span class="sub" id="ysdRemTag" style="font-size:11px;color:var(--text-soft);"></span></h2></div>
@@ -606,12 +622,19 @@ select.remarksInput{
             <option value="Remaining">Remaining</option>
           </select>
           <select id="ysdYearFilter"><option value="">All Create Years</option></select>
+          <select id="ysdDisableFilter">
+            <option value="">All Disable Ages</option>
+            <option value="0-30 Days">0-30 Days</option>
+            <option value="30-90 Days">30-90 Days</option>
+            <option value="90+ Days">90+ Days</option>
+            <option value="Not Disabled">Not Disabled</option>
+          </select>
         </div>
         <div class="ysd-table-scroll">
           <table>
             <thead><tr>
               <th>Username</th><th>OLT</th><th>Created</th><th>Expiry</th>
-              <th class="ysd-num">Fcst Revenue</th><th>Status</th>
+              <th class="ysd-num">Fcst Revenue</th><th>Status</th><th class="ysd-num">Days Disabled</th>
             </tr></thead>
             <tbody id="ysdDetailTable"></tbody>
           </table>
@@ -1214,6 +1237,7 @@ function fbLoadAndMerge(){
           r.followUp = !!rec.followUp; r.remarks = rec.remarks || '';
           r.followedUpBy = rec.followedUpBy || null;
           r.followedUpByName = rec.followedUpByName || null;
+          r.followUpAt = rec.updatedAt || null;
         }
       });
       setSyncStatus('Synced with Firebase ✓');
@@ -1447,6 +1471,49 @@ loadEmbedded();
 renderHighRisk();
 
 // ---------- Staff login flow ----------
+const SESSION_STORAGE_KEY = 'expiryTrackerSession';
+const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function saveSession(staff){
+  try{
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ staff, loginAt: Date.now() }));
+  }catch(err){ console.error('Session save failed', err); }
+}
+function clearSession(){
+  try{ localStorage.removeItem(SESSION_STORAGE_KEY); }catch(err){ console.error('Session clear failed', err); }
+}
+function loadSession(){
+  try{
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if(!raw) return null;
+    const parsed = JSON.parse(raw);
+    if(!parsed || !parsed.staff || !parsed.loginAt) return null;
+    if(Date.now() - parsed.loginAt > SESSION_MAX_AGE_MS){ clearSession(); return null; }
+    return parsed;
+  }catch(err){ console.error('Session load failed', err); return null; }
+}
+
+function applyLogin(staff, isRestore){
+  CURRENT_STAFF = staff;
+  SESSION_START = Date.now();
+  document.getElementById('loginOverlay').style.display = 'none';
+  const badge = document.getElementById('staffBadge');
+  badge.style.display = 'inline-flex';
+  badge.innerHTML = `👤 ${CURRENT_STAFF.name} <button id="logoutBtn">Logout</button>`;
+  document.getElementById('logoutBtn').addEventListener('click', ()=>{
+    stopHeartbeat();
+    CURRENT_STAFF = null;
+    clearSession();
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('loginUser').value='';
+    document.getElementById('loginPass').value='';
+    badge.style.display = 'none';
+  });
+  startHeartbeat();
+  if(!isRestore) fbLogSession('login');
+  renderSummary();
+}
+
 function doLogin(){
   const idRaw = document.getElementById('loginUser').value.trim().toLowerCase();
   const pass = document.getElementById('loginPass').value;
@@ -1457,27 +1524,35 @@ function doLogin(){
     return;
   }
   errEl.textContent = '';
-  CURRENT_STAFF = { id: idRaw, name: rec.name, role: rec.role };
-  SESSION_START = Date.now();
-  document.getElementById('loginOverlay').style.display = 'none';
-  const badge = document.getElementById('staffBadge');
-  badge.style.display = 'inline-flex';
-  badge.innerHTML = `👤 ${CURRENT_STAFF.name} <button id="logoutBtn">Logout</button>`;
-  document.getElementById('logoutBtn').addEventListener('click', ()=>{
-    stopHeartbeat();
-    CURRENT_STAFF = null;
-    document.getElementById('loginOverlay').style.display = 'flex';
-    document.getElementById('loginUser').value='';
-    document.getElementById('loginPass').value='';
-    badge.style.display = 'none';
-  });
-  startHeartbeat();
-  fbLogSession('login');
-  renderSummary();
+  const staff = { id: idRaw, name: rec.name, role: rec.role };
+  saveSession(staff); // 24 ghanta samma refresh garda pani password nasodhos
+  applyLogin(staff, false);
 }
 document.getElementById('loginBtn').addEventListener('click', doLogin);
 document.getElementById('loginPass').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('loginUser').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
+
+// Restore session on page load if a valid (< 24hr) login exists in this browser
+(function restoreSessionOnLoad(){
+  const session = loadSession();
+  if(session && session.staff){
+    applyLogin(session.staff, true);
+  }
+})();
+
+// ---------- Manual "Refresh Data" (pulls latest from Firebase without a full browser reload) ----------
+document.getElementById('refreshDataBtn').addEventListener('click', ()=>{
+  const btn = document.getElementById('refreshDataBtn');
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '🔄 Refreshing…';
+  fbLoadAndMerge();
+  renderYSD();
+  renderHighRisk();
+  renderUnpaid();
+  renderSummary();
+  setTimeout(()=>{ btn.disabled = false; btn.textContent = origText; }, 1200);
+});
 
 // ---------- Time / effort tracking ----------
 let HEARTBEAT_TIMER = null;
@@ -1661,6 +1736,71 @@ function renderSummary(){
     ensure(id, STAFF_CREDENTIALS[id] ? STAFF_CREDENTIALS[id].name : id);
   });
 
+  // ---- Follow-up Timing Report (day-wise & hour-wise, based on when follow-up was marked) ----
+  const timingEvents = [];
+  RAW.forEach(r=>{
+    if(oltSel!=='ALL' && r.olt!==oltSel) return;
+    if(r.followUp && r.followUpAt) timingEvents.push(r.followUpAt);
+  });
+  Object.values(HR_FOLLOWUPS).forEach(rec=>{
+    if(oltSel!=='ALL' && hrOltByUser[normUser(rec.username)]!==oltSel) return;
+    if(rec.followUp && rec.updatedAt) timingEvents.push(rec.updatedAt);
+  });
+  Object.values(UNPAID_FOLLOWUPS).forEach(rec=>{
+    if(rec.followUp && rec.updatedAt) timingEvents.push(rec.updatedAt);
+  });
+  const dayMap = {}, hourMap = {};
+  for(let h=0; h<24; h++) hourMap[h] = 0;
+  timingEvents.forEach(ts=>{
+    const d = new Date(ts);
+    if(isNaN(d)) return;
+    const dayKey = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    dayMap[dayKey] = (dayMap[dayKey]||0) + 1;
+    hourMap[d.getHours()] = (hourMap[d.getHours()]||0) + 1;
+  });
+  const dayKeys = Object.keys(dayMap).sort().reverse().slice(0, 30); // most recent 30 days
+  const maxDayCount = Math.max(1, ...dayKeys.map(k=>dayMap[k]));
+  const maxHourCount = Math.max(1, ...Object.values(hourMap));
+  function hourLabel(h){
+    const ampm = h < 12 ? 'AM' : 'PM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return h12 + ' ' + ampm;
+  }
+  let timingHtml = '';
+  if(timingEvents.length){
+    timingHtml = `<div class="panel" style="margin-top:18px;">
+      <div class="panel-head"><h2>Follow-up Timing Report <span class="sub" style="font-size:11px;color:var(--text-soft);font-weight:400;">Follow-up marked bhako date/time ko basis ma — ${fmtNum(timingEvents.length)} total follow-ups</span></h2></div>
+      <div class="panel-body">
+        <div class="ysd-grid2">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-soft);margin-bottom:8px;">Day-wise (last ${dayKeys.length} days with activity)</div>
+            <div class="ysd-table-scroll" style="max-height:280px;">
+              <table><thead><tr><th>Date</th><th class="ysd-num">Follow-ups</th><th style="width:120px">Bar</th></tr></thead><tbody>
+              ${dayKeys.map(k=>`<tr>
+                <td>${k}</td>
+                <td class="ysd-num">${fmtNum(dayMap[k])}</td>
+                <td><div class="ysd-bar-track"><div class="ysd-bar-fill" style="width:${(dayMap[k]/maxDayCount*100).toFixed(0)}%"></div></div></td>
+              </tr>`).join('')}
+              </tbody></table>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-soft);margin-bottom:8px;">Hour-wise (0–23 hr, all days combined)</div>
+            <div class="ysd-table-scroll" style="max-height:280px;">
+              <table><thead><tr><th>Hour</th><th class="ysd-num">Follow-ups</th><th style="width:120px">Bar</th></tr></thead><tbody>
+              ${Array.from({length:24}, (_,h)=>h).filter(h=>hourMap[h]>0).map(h=>`<tr>
+                <td>${hourLabel(h)}</td>
+                <td class="ysd-num">${fmtNum(hourMap[h])}</td>
+                <td><div class="ysd-bar-track"><div class="ysd-bar-fill" style="width:${(hourMap[h]/maxHourCount*100).toFixed(0)}%"></div></div></td>
+              </tr>`).join('')}
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   // ---- Overall follow-up status (always shown, regardless of per-staff data) ----
   const scopeRows = RAW.filter(r=> oltSel==='ALL' || r.olt===oltSel);
   const totalExpiring = scopeRows.length;
@@ -1677,7 +1817,7 @@ function renderSummary(){
 
   const ids = Object.keys(staffStats);
   if(!ids.length){
-    wrap.innerHTML = statusHtml + `<div class="note">Halsam kunai staff le follow-up gareko chaina. Login garera follow-up marking start garnus.</div>`;
+    wrap.innerHTML = statusHtml + `<div class="note">Halsam kunai staff le follow-up gareko chaina. Login garera follow-up marking start garnus.</div>` + timingHtml;
     return;
   }
   let html = statusHtml + `<div class="scrollx"><table><thead><tr>
@@ -1696,7 +1836,7 @@ function renderSummary(){
       <td>${fmtNum(s.collected)}</td>
     </tr>`;
   });
-  html += '</tbody></table></div>';
+  html += '</tbody></table></div>' + timingHtml;
   wrap.innerHTML = html;
 }
 
@@ -1725,6 +1865,21 @@ function ysdInferOlt(username){
   return 'UNKNOWN';
 }
 function ysdStatus(d){ return isBilled(d.u) ? 'Matched' : 'Remaining'; }
+function ysdDaysDisabled(d){
+  if(!d.expiry) return null;
+  const exp = new Date(d.expiry + 'T00:00:00');
+  if(isNaN(exp)) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.floor((today - exp) / 86400000);
+  return diff; // negative = not yet expired/disabled
+}
+function ysdDisableCategory(d){
+  const days = ysdDaysDisabled(d);
+  if(days === null || days < 0) return 'Not Disabled';
+  if(days <= 30) return '0-30 Days';
+  if(days <= 90) return '30-90 Days';
+  return '90+ Days';
+}
 
 function loadYSDInitial(){
   YSD_DATA = window.__YSD_DEFAULT_DATA__ || [];
@@ -1784,6 +1939,37 @@ function renderYSD(){
     oltTbody.appendChild(tr);
   }
 
+  // Disable-age category breakdown (0-30 / 30-90 / 90+ days since expiry)
+  const disableCatOrder = ['0-30 Days','30-90 Days','90+ Days','Not Disabled'];
+  const disableCatStats = {};
+  disableCatOrder.forEach(c=> disableCatStats[c] = {total:0, matched:0});
+  YSD_DATA.forEach(d=>{
+    const c = ysdDisableCategory(d);
+    if(!disableCatStats[c]) disableCatStats[c] = {total:0, matched:0};
+    disableCatStats[c].total++;
+    if(ysdStatus(d)==='Matched') disableCatStats[c].matched++;
+  });
+  const disableCatTbody = document.getElementById('ysdDisableCatTable');
+  if(disableCatTbody){
+    disableCatTbody.innerHTML = '';
+    disableCatOrder.forEach(c=>{
+      const s = disableCatStats[c];
+      if(!s || !s.total) return;
+      const rem = s.total - s.matched;
+      const pct = s.total ? (s.matched/s.total*100) : 0;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${c}</td>
+        <td class="ysd-num">${fmtNum(s.total)}</td>
+        <td class="ysd-num" style="color:var(--green);font-weight:600">${fmtNum(s.matched)}</td>
+        <td class="ysd-num" style="color:var(--red);font-weight:600">${fmtNum(rem)}</td>
+        <td class="ysd-num">${pct.toFixed(1)}%</td>
+        <td><div class="ysd-bar-track"><div class="ysd-bar-fill" style="width:${pct}%"></div></div></td>
+      `;
+      disableCatTbody.appendChild(tr);
+    });
+  }
+
   // Year chart
   const yearSet = [...new Set(YSD_DATA.filter(d=>ysdStatus(d)==='Remaining').map(d=>d.cy||'Unknown'))].sort((a,b)=>{
     if(a==='Unknown') return 1; if(b==='Unknown') return -1; return a-b;
@@ -1836,11 +2022,13 @@ function ysdGetFiltered(){
   const oltF = document.getElementById('ysdOltFilterLocal').value;
   const stF = document.getElementById('ysdStatusFilter').value;
   const yF = document.getElementById('ysdYearFilter').value;
+  const dF = document.getElementById('ysdDisableFilter') ? document.getElementById('ysdDisableFilter').value : '';
   return YSD_DATA.filter(d=>{
     if(q && !d.u.toLowerCase().includes(q)) return false;
     if(oltF && d.olt !== oltF) return false;
     if(stF && ysdStatus(d) !== stF) return false;
     if(yF && String(d.cy) !== yF) return false;
+    if(dF && ysdDisableCategory(d) !== dF) return false;
     return true;
   });
 }
@@ -1853,6 +2041,8 @@ function renderYSDDetail(){
   const frag = document.createDocumentFragment();
   filtered.slice(0,500).forEach(d=>{
     const st = ysdStatus(d);
+    const days = ysdDaysDisabled(d);
+    const daysLabel = (days === null) ? '—' : (days < 0 ? 'Not yet' : fmtNum(days));
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${billedUsernameHtml(d.u)}</td>
@@ -1861,17 +2051,18 @@ function renderYSDDetail(){
       <td>${d.expiry||'—'}</td>
       <td class="ysd-num">${d.rev? d.rev.toLocaleString('en-US',{maximumFractionDigits:0}) : '—'}</td>
       <td class="ysd-status-${st}">${st}</td>
+      <td class="ysd-num">${daysLabel}</td>
     `;
     frag.appendChild(tr);
   });
   tbody.appendChild(frag);
   if(filtered.length>500){
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="6" style="text-align:center;color:var(--text-soft);padding:10px;">…${filtered.length-500} more rows — narrow filters or export</td>`;
+    tr.innerHTML = `<td colspan="7" style="text-align:center;color:var(--text-soft);padding:10px;">…${filtered.length-500} more rows — narrow filters or export</td>`;
     tbody.appendChild(tr);
   }
 }
-['ysdSearchBox','ysdOltFilterLocal','ysdStatusFilter','ysdYearFilter'].forEach(id=>{
+['ysdSearchBox','ysdOltFilterLocal','ysdStatusFilter','ysdYearFilter','ysdDisableFilter'].forEach(id=>{
   const el = document.getElementById(id);
   el.addEventListener('input', renderYSDDetail);
   el.addEventListener('change', renderYSDDetail);
@@ -1973,10 +2164,11 @@ document.getElementById('ysdResetBtn').addEventListener('click', ()=>{
 document.getElementById('ysdExportCsvBtn').addEventListener('click', ()=>{
   const rows = ysdGetFiltered().map(d=>({
     Username: d.u, OLT: d.olt||'', CreateYear: d.cy||'', Created: d.created||'',
-    Expiry: d.expiry||'', ForecastRevenue: d.rev||'', Status: ysdStatus(d)
+    Expiry: d.expiry||'', ForecastRevenue: d.rev||'', Status: ysdStatus(d),
+    DaysDisabled: (ysdDaysDisabled(d) ?? ''), DisableCategory: ysdDisableCategory(d)
   }));
-  let csv = 'Username,OLT,CreateYear,Created,Expiry,ForecastRevenue,Status\n';
-  rows.forEach(r=>{ csv += `${r.Username},${r.OLT},${r.CreateYear},${r.Created},${r.Expiry},${r.ForecastRevenue},${r.Status}\n`; });
+  let csv = 'Username,OLT,CreateYear,Created,Expiry,ForecastRevenue,Status,DaysDisabled,DisableCategory\n';
+  rows.forEach(r=>{ csv += `${r.Username},${r.OLT},${r.CreateYear},${r.Created},${r.Expiry},${r.ForecastRevenue},${r.Status},${r.DaysDisabled},${r.DisableCategory}\n`; });
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
