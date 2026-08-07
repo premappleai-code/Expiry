@@ -32,6 +32,10 @@ function fbKey(username){ return String(username).replace(/[.#$\[\]\/]/g, '_'); 
 const STAFF_CREDENTIALS = {
   'luksha': { pass: 'luksha123', name: 'Luksha', role: 'staff' },
   'kamala': { pass: 'kamala123', name: 'Kamala', role: 'staff' },
+  'manoj':  { pass: 'manoj@#',   name: 'Manoj',  role: 'staff' },
+  'dipesh': { pass: 'dipesh@#',  name: 'Dipesh',  role: 'staff' },
+  'sandip': { pass: 'sandip@#',  name: 'Sandip',  role: 'staff' },
+  'milan':  { pass: 'milan@#',   name: 'Milan',  role: 'staff' },
   'admin':  { pass: 'admin@#',   name: 'Admin',  role: 'admin' }
 };
 let CURRENT_STAFF = null; // {id, name, role}
