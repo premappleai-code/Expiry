@@ -320,43 +320,43 @@ select.remarksInput{
 .tabSection{ display:none; }
 .tabSection.active{ display:block; }
 
-/* ---- Year Start Disable tab ---- */
-#tabYSD .ysd-kpi-row{ display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px; }
-#tabYSD .ysd-kpi{ background:var(--card); border:1px solid var(--border); border-radius:4px; padding:14px 16px; border-top:3px solid var(--blue); }
-#tabYSD .ysd-kpi.remaining{ border-top-color:var(--red); }
-#tabYSD .ysd-kpi.matched{ border-top-color:var(--green); }
-#tabYSD .ysd-kpi.pct{ border-top-color:var(--amber); }
-#tabYSD .ysd-kpi .label{ font-size:11px; color:var(--text-soft); text-transform:uppercase; letter-spacing:.4px; }
-#tabYSD .ysd-kpi .value{ font-size:24px; font-weight:700; margin-top:4px; }
-#tabYSD .ysd-kpi .foot{ font-size:11px; color:var(--text-soft); margin-top:2px; }
-@media(max-width:980px){ #tabYSD .ysd-kpi-row{grid-template-columns:repeat(2,1fr);} }
-#tabYSD .ysd-grid2{ display:grid; grid-template-columns:1.1fr .9fr; gap:18px; }
-@media(max-width:980px){ #tabYSD .ysd-grid2{grid-template-columns:1fr;} }
-#tabYSD .ysd-olt-pill{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
-#tabYSD .ysd-olt-SKGD01{ background:#DEECF9; color:#005A9E; }
-#tabYSD .ysd-olt-VMAD01{ background:#DFF6DD; color:#107C10; }
-#tabYSD .ysd-olt-RISH01{ background:#FFF4CE; color:#8A6D00; }
-#tabYSD .ysd-olt-DMLI{ background:#F3E9FB; color:#5C2D91; }
-#tabYSD .ysd-olt-UNKNOWN{ background:#F3F2F1; color:var(--text-soft); }
-#tabYSD .ysd-status-Matched{ color:var(--green); font-weight:600; }
-#tabYSD .ysd-status-Remaining{ color:var(--red); font-weight:600; }
-#tabYSD .ysd-bar-track{ background:#F3F2F1; border-radius:8px; height:8px; width:100%; overflow:hidden; }
-#tabYSD .ysd-bar-fill{ height:100%; background:var(--blue); }
-#tabYSD .ysd-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
-#tabYSD .ysd-toolbar input, #tabYSD .ysd-toolbar select{ font-family:inherit; font-size:12.5px; padding:6px 10px; border:1px solid var(--border); border-radius:4px; background:#fff; }
-#tabYSD .ysd-toolbar input{ flex:1; min-width:160px; }
-#tabYSD .ysd-table-scroll{ max-height:420px; overflow-y:auto; border:1px solid var(--border); border-radius:4px; }
-#tabYSD .ysd-import-field{ display:flex; flex-direction:column; gap:4px; }
-#tabYSD .ysd-import-field label{ font-size:11px; color:var(--text-soft); font-weight:600; }
-#tabYSD .ysd-import-field input[type=file]{ font-size:12px; border:1px dashed var(--border); border-radius:4px; padding:8px; background:#FAFAFA; width:280px; }
-#tabYSD .ysd-import-status{ font-size:12px; margin-top:10px; padding:8px 10px; border-radius:4px; display:none; }
-#tabYSD .ysd-import-status.ok{ background:#DFF6DD; color:#107C10; display:block; }
-#tabYSD .ysd-import-status.err{ background:#FDE7E9; color:#D13438; display:block; }
-#tabYSD .ysd-import-status.info{ background:#DEECF9; color:#005A9E; display:block; }
-#tabYSD .ysd-data-source-tag{ font-size:11px; padding:2px 8px; border-radius:10px; background:#F3F2F1; color:var(--text-soft); font-weight:600; }
-#tabYSD .ysd-data-source-tag.imported{ background:#DFF6DD; color:#107C10; }
-#tabYSD .ysd-num{ text-align:right; font-variant-numeric:tabular-nums; }
-#tabYSD canvas{ max-width:100%; }
+/* ---- Year Start Disable tab (rules shared with Unpaid Follow-up tab) ---- */
+#tabYSD .ysd-kpi-row, #tabUnpaid .ysd-kpi-row{ display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px; }
+#tabYSD .ysd-kpi, #tabUnpaid .ysd-kpi{ background:var(--card); border:1px solid var(--border); border-radius:4px; padding:14px 16px; border-top:3px solid var(--blue); }
+#tabYSD .ysd-kpi.remaining, #tabUnpaid .ysd-kpi.remaining{ border-top-color:var(--red); }
+#tabYSD .ysd-kpi.matched, #tabUnpaid .ysd-kpi.matched{ border-top-color:var(--green); }
+#tabYSD .ysd-kpi.pct, #tabUnpaid .ysd-kpi.pct{ border-top-color:var(--amber); }
+#tabYSD .ysd-kpi .label, #tabUnpaid .ysd-kpi .label{ font-size:11px; color:var(--text-soft); text-transform:uppercase; letter-spacing:.4px; }
+#tabYSD .ysd-kpi .value, #tabUnpaid .ysd-kpi .value{ font-size:24px; font-weight:700; margin-top:4px; }
+#tabYSD .ysd-kpi .foot, #tabUnpaid .ysd-kpi .foot{ font-size:11px; color:var(--text-soft); margin-top:2px; }
+@media(max-width:980px){ #tabYSD .ysd-kpi-row, #tabUnpaid .ysd-kpi-row{grid-template-columns:repeat(2,1fr);} }
+#tabYSD .ysd-grid2, #tabUnpaid .ysd-grid2{ display:grid; grid-template-columns:1.1fr .9fr; gap:18px; }
+@media(max-width:980px){ #tabYSD .ysd-grid2, #tabUnpaid .ysd-grid2{grid-template-columns:1fr;} }
+#tabYSD .ysd-olt-pill, #tabUnpaid .ysd-olt-pill{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+#tabYSD .ysd-olt-SKGD01, #tabUnpaid .ysd-olt-SKGD01{ background:#DEECF9; color:#005A9E; }
+#tabYSD .ysd-olt-VMAD01, #tabUnpaid .ysd-olt-VMAD01{ background:#DFF6DD; color:#107C10; }
+#tabYSD .ysd-olt-RISH01, #tabUnpaid .ysd-olt-RISH01{ background:#FFF4CE; color:#8A6D00; }
+#tabYSD .ysd-olt-DMLI, #tabUnpaid .ysd-olt-DMLI{ background:#F3E9FB; color:#5C2D91; }
+#tabYSD .ysd-olt-UNKNOWN, #tabUnpaid .ysd-olt-UNKNOWN{ background:#F3F2F1; color:var(--text-soft); }
+#tabYSD .ysd-status-Matched, #tabUnpaid .ysd-status-Matched{ color:var(--green); font-weight:600; }
+#tabYSD .ysd-status-Remaining, #tabUnpaid .ysd-status-Remaining{ color:var(--red); font-weight:600; }
+#tabYSD .ysd-bar-track, #tabUnpaid .ysd-bar-track{ background:#F3F2F1; border-radius:8px; height:8px; width:100%; overflow:hidden; }
+#tabYSD .ysd-bar-fill, #tabUnpaid .ysd-bar-fill{ height:100%; background:var(--blue); }
+#tabYSD .ysd-toolbar, #tabUnpaid .ysd-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+#tabYSD .ysd-toolbar input, #tabYSD .ysd-toolbar select, #tabUnpaid .ysd-toolbar input, #tabUnpaid .ysd-toolbar select{ font-family:inherit; font-size:12.5px; padding:6px 10px; border:1px solid var(--border); border-radius:4px; background:#fff; }
+#tabYSD .ysd-toolbar input, #tabUnpaid .ysd-toolbar input{ flex:1; min-width:160px; }
+#tabYSD .ysd-table-scroll, #tabUnpaid .ysd-table-scroll{ max-height:420px; overflow-y:auto; border:1px solid var(--border); border-radius:4px; }
+#tabYSD .ysd-import-field, #tabUnpaid .ysd-import-field{ display:flex; flex-direction:column; gap:4px; }
+#tabYSD .ysd-import-field label, #tabUnpaid .ysd-import-field label{ font-size:11px; color:var(--text-soft); font-weight:600; }
+#tabYSD .ysd-import-field input[type=file], #tabUnpaid .ysd-import-field input[type=file]{ font-size:12px; border:1px dashed var(--border); border-radius:4px; padding:8px; background:#FAFAFA; width:280px; }
+#tabYSD .ysd-import-status, #tabUnpaid .ysd-import-status{ font-size:12px; margin-top:10px; padding:8px 10px; border-radius:4px; display:none; }
+#tabYSD .ysd-import-status.ok, #tabUnpaid .ysd-import-status.ok{ background:#DFF6DD; color:#107C10; display:block; }
+#tabYSD .ysd-import-status.err, #tabUnpaid .ysd-import-status.err{ background:#FDE7E9; color:#D13438; display:block; }
+#tabYSD .ysd-import-status.info, #tabUnpaid .ysd-import-status.info{ background:#DEECF9; color:#005A9E; display:block; }
+#tabYSD .ysd-data-source-tag, #tabUnpaid .ysd-data-source-tag{ font-size:11px; padding:2px 8px; border-radius:10px; background:#F3F2F1; color:var(--text-soft); font-weight:600; }
+#tabYSD .ysd-data-source-tag.imported, #tabUnpaid .ysd-data-source-tag.imported{ background:#DFF6DD; color:#107C10; }
+#tabYSD .ysd-num, #tabUnpaid .ysd-num{ text-align:right; font-variant-numeric:tabular-nums; }
+#tabYSD canvas, #tabUnpaid canvas{ max-width:100%; }
 
 /* ---- Billing-matched (green) username highlight, used across tabs ---- */
 .paid-user{ color:var(--green); font-weight:700; }
@@ -424,6 +424,7 @@ select.remarksInput{
   <button class="mainTab" data-tab="tabExpiry">Expiry Users</button>
   <button class="mainTab" data-tab="tabHighRisk">High Risk Users</button>
   <button class="mainTab" data-tab="tabYSD">Year Start Disable</button>
+  <button class="mainTab" data-tab="tabUnpaid">Unpaid Follow-up</button>
   <button class="mainTab" data-tab="tabSummary">Summary Reports</button>
 </div>
 
@@ -615,6 +616,74 @@ select.remarksInput{
     </div>
   </div>
 
+  <!-- ============ UNPAID FOLLOW-UP TAB (new installations, NOT PAID) ============ -->
+  <div class="tabSection" id="tabUnpaid">
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Unpaid Follow-up — Import <span class="sub" style="font-size:11px;color:var(--text-soft);font-weight:400;">New Installation file bata PAYMENT STATUS = NOT PAID matra tanincha. Green tick shared Billing Import bata match huncha.</span></h2>
+      </div>
+      <div class="panel-body">
+        <div class="ysd-toolbar">
+          <div class="ysd-import-field">
+            <label>New Installation / Order list (.xlsx)</label>
+            <input type="file" id="unpaidFileInput" accept=".xlsx,.xls">
+          </div>
+          <button class="secondary" id="unpaidImportBtn">Import &amp; Recompute</button>
+          <button class="ghost" id="unpaidResetBtn">Clear</button>
+          <span class="ysd-data-source-tag" id="unpaidDataSourceTag">No file imported yet</span>
+        </div>
+        <div class="ysd-import-status" id="unpaidImportStatus"></div>
+        <div class="ysd-toolbar" style="margin-top:10px;">
+          <span style="font-size:11px;color:var(--text-soft);font-weight:600;">EXPORT:</span>
+          <button class="ghost" id="unpaidExportCsvBtn">Export CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpis" id="unpaidKpiRow"></div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Staff-wise Unpaid Summary <span class="sub" style="font-size:11px;color:var(--text-soft);">Marketed By ko basis ma — Billing bata match bhaisakeka hataera</span></h2></div>
+      <div class="panel-body">
+        <div class="scrollx">
+        <table>
+          <thead><tr>
+            <th>Marketed By (Staff)</th><th class="ysd-num">Unpaid Count</th><th class="ysd-num">Billing Matched</th>
+            <th class="ysd-num">Still Pending</th><th class="ysd-num">Amount Pending (Rs)</th><th class="ysd-num">Followed-up</th>
+          </tr></thead>
+          <tbody id="unpaidStaffTable"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>User-level Detail <span class="sub" id="unpaidDetailCount" style="font-size:11px;color:var(--text-soft);"></span></h2></div>
+      <div class="panel-body">
+        <div class="ysd-toolbar">
+          <input type="text" id="unpaidSearchBox" placeholder="Search username/staff...">
+          <select id="unpaidOltFilter"><option value="">All OLTs</option></select>
+          <select id="unpaidStaffFilter"><option value="">All Staff</option></select>
+          <select id="unpaidStatusFilter">
+            <option value="">All Billing Status</option>
+            <option value="Matched">Matched (Paid)</option>
+            <option value="Pending">Pending</option>
+          </select>
+        </div>
+        <div class="ysd-table-scroll">
+          <table>
+            <thead><tr>
+              <th>Username</th><th>OLT</th><th>Marketed By</th><th>Plan</th><th>Order Date</th>
+              <th class="ysd-num">Days Unpaid</th><th class="ysd-num">Amount</th><th>Billing Status</th><th>Follow-up</th><th>Remarks</th>
+            </tr></thead>
+            <tbody id="unpaidDetailTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ SUMMARY REPORTS TAB (entire combined report) ============ -->
   <div class="tabSection" id="tabSummary">
 
@@ -720,6 +789,8 @@ let BILLING_PAID = new Set();   // normalized usernames found in imported billin
 let BILLING_AMOUNT = {};        // normalized username -> paid amount (if billing file has an amount column)
 let BILLING_META = { fileName:'', count:0 };
 let HR_FOLLOWUPS = {};          // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} for High-Risk list
+let UNPAID_DATA = [];           // Unpaid Follow-up dataset: {u, olt, marketedBy, plan, created, amt} — status computed live from BILLING_PAID
+let UNPAID_FOLLOWUPS = {};      // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName}
 
 function normUser(u){ return String(u||'').trim().toLowerCase(); }
 function isBilled(username){ return BILLING_PAID.has(normUser(username)); }
@@ -1098,7 +1169,7 @@ function exportCSV(rows, filename){
 // ---------- Firebase sync (follow-up + remarks) ----------
 function fbSaveFollowup(username, followUp, remarks, kind){
   if(!fbdb){ setSyncStatus('Offline mode (Firebase not loaded)', true); return; }
-  const basePath = (kind === 'highrisk') ? 'expiryTracker/highRiskFollowups' : FB_PATH;
+  const basePath = (kind === 'highrisk') ? 'expiryTracker/highRiskFollowups' : (kind === 'unpaid') ? 'expiryTracker/unpaidFollowups' : FB_PATH;
   try{
     const key = fbKey(username);
     fbdb.ref(basePath + '/' + key).set({
@@ -1162,6 +1233,15 @@ function fbLoadAndMerge(){
       renderSummary();
     }).catch(err=> console.error('High-risk load failed', err));
   }catch(err){ console.error('High-risk load error', err); }
+  // load unpaid follow-ups
+  try{
+    fbdb.ref('expiryTracker/unpaidFollowups').once('value').then(snap=>{
+      const data = snap.val() || {};
+      UNPAID_FOLLOWUPS = {};
+      Object.values(data).forEach(v=>{ if(v && v.username) UNPAID_FOLLOWUPS[normUser(v.username)] = v; });
+      renderUnpaid();
+    }).catch(err=> console.error('Unpaid follow-up load failed', err));
+  }catch(err){ console.error('Unpaid follow-up load error', err); }
 }
 
 function setSyncStatus(msg, isError){
@@ -1249,6 +1329,7 @@ document.getElementById('billingFileInput').addEventListener('change', (e)=>{
     render();
     renderHighRisk();
     renderYSD();
+    renderUnpaid();
     renderSummary();
   };
   reader.readAsArrayBuffer(file);
@@ -1827,6 +1908,245 @@ document.getElementById('ysdExportCsvBtn').addEventListener('click', ()=>{
 
 loadYSDInitial();
 renderYSD();
+
+// =====================================================================
+// UNPAID FOLLOW-UP TAB — New Installation file, PAYMENT STATUS = NOT PAID
+// Billing Status (Matched/Pending) computed live from shared BILLING_PAID
+// (populated by the "Billing Import" button at top) — so importing billing
+// data once syncs Matched/Pending here automatically, same as Year Start Disable.
+// =====================================================================
+function unpaidInferOlt(username){
+  if(/_fskgd$/i.test(username)) return 'SKGD01';
+  if(/_fvmd$/i.test(username)) return 'VMAD01';
+  if(/_frish$/i.test(username)) return 'RISH01';
+  if(/_fdmli$/i.test(username)) return 'DMLI';
+  return 'UNKNOWN';
+}
+function unpaidStatus(d){ return isBilled(d.u) ? 'Matched' : 'Pending'; }
+
+function unpaidShowStatus(msg, type){
+  const el = document.getElementById('unpaidImportStatus');
+  el.textContent = msg;
+  el.className = 'ysd-import-status ' + type;
+}
+
+async function unpaidProcessImport(){
+  const file = document.getElementById('unpaidFileInput').files[0];
+  if(!file){
+    unpaidShowStatus('Select the New Installation / Order file first.', 'err');
+    return;
+  }
+  unpaidShowStatus('Reading file…', 'info');
+  try{
+    const rows = await ysdReadWorkbook(file); // reuse shared xlsx reader
+    const headerIdx = rows.findIndex(r => (r||[]).some(c => typeof c === 'string' && c.trim().toUpperCase() === 'USERNAME'));
+    if(headerIdx === -1) throw new Error('USERNAME column vetiena.');
+    const header = rows[headerIdx].map(c => (c||'').toString().trim().toUpperCase());
+    const colIdx = name => header.indexOf(name);
+    const cUser = colIdx('USERNAME'), cCreate = colIdx('CREATE DATE'), cOlt = colIdx('OLT'),
+          cPlan = colIdx('PLAN NAME'), cPay = colIdx('PAYMENT STATUS'), cMkt = colIdx('MARKETED BY'),
+          cChg = colIdx('USAGE CHARGE');
+    if(cUser === -1 || cPay === -1) throw new Error('USERNAME / PAYMENT STATUS column vetiena.');
+
+    const data = [];
+    for(let i=headerIdx+1;i<rows.length;i++){
+      const r = rows[i];
+      if(!r || r.every(c=>c===null || c==='')) continue;
+      const pay = (r[cPay]||'').toString().trim().toUpperCase();
+      if(pay !== 'NOT PAID') continue;
+      const u = (r[cUser]||'').toString().trim();
+      if(!u) continue;
+      const created = (cCreate>=0 && r[cCreate] instanceof Date && !isNaN(r[cCreate])) ? r[cCreate] : null;
+      const amt = cChg>=0 ? (parseFloat(String(r[cChg]||'').replace(/,/g,'')) || 0) : 0;
+      data.push({
+        u,
+        olt: (cOlt>=0 && r[cOlt]) ? String(r[cOlt]).trim() : unpaidInferOlt(u),
+        marketedBy: (cMkt>=0 && r[cMkt]) ? String(r[cMkt]).trim() : 'Unassigned',
+        plan: cPlan>=0 ? (r[cPlan]||'') : '',
+        created: ysdToDateStr(created),
+        amt: Math.round(amt*100)/100
+      });
+    }
+    if(!data.length) throw new Error('NOT PAID bhako user feला परेन।');
+    UNPAID_DATA = data;
+    document.getElementById('unpaidDataSourceTag').textContent = 'Imported · ' + file.name;
+    document.getElementById('unpaidDataSourceTag').classList.add('imported');
+    unpaidShowStatus(`Imported successfully — ${UNPAID_DATA.length} unpaid users. Billing Status shared Billing Import bata aauxa.`, 'ok');
+    renderUnpaid();
+  }catch(err){
+    console.error(err);
+    unpaidShowStatus('Import failed: ' + err.message, 'err');
+  }
+}
+document.getElementById('unpaidImportBtn').addEventListener('click', unpaidProcessImport);
+document.getElementById('unpaidResetBtn').addEventListener('click', ()=>{
+  UNPAID_DATA = [];
+  document.getElementById('unpaidDataSourceTag').textContent = 'No file imported yet';
+  document.getElementById('unpaidDataSourceTag').classList.remove('imported');
+  unpaidShowStatus('Cleared.', 'info');
+  document.getElementById('unpaidFileInput').value = '';
+  renderUnpaid();
+});
+
+function daysSince(dateStr){
+  if(!dateStr) return null;
+  const d = new Date(dateStr);
+  if(isNaN(d)) return null;
+  return Math.max(0, Math.floor((Date.now() - d.getTime())/86400000));
+}
+
+function unpaidGetFiltered(){
+  const q = document.getElementById('unpaidSearchBox').value.toLowerCase();
+  const oltF = document.getElementById('unpaidOltFilter').value;
+  const staffF = document.getElementById('unpaidStaffFilter').value;
+  const stF = document.getElementById('unpaidStatusFilter').value;
+  return UNPAID_DATA.filter(d=>{
+    if(q && !(d.u.toLowerCase().includes(q) || (d.marketedBy||'').toLowerCase().includes(q))) return false;
+    if(oltF && d.olt !== oltF) return false;
+    if(staffF && d.marketedBy !== staffF) return false;
+    if(stF && unpaidStatus(d) !== stF) return false;
+    return true;
+  });
+}
+
+function renderUnpaid(){
+  const total = UNPAID_DATA.length;
+  let matched = 0;
+  UNPAID_DATA.forEach(d=>{ if(unpaidStatus(d)==='Matched') matched++; });
+  const pending = total - matched;
+  const amtPending = UNPAID_DATA.filter(d=>unpaidStatus(d)==='Pending').reduce((s,d)=>s+(d.amt||0),0);
+  const staffCount = new Set(UNPAID_DATA.map(d=>d.marketedBy)).size;
+
+  document.getElementById('unpaidKpiRow').innerHTML = `
+    <div class="kpi red"><div class="val">${fmtNum(total)}</div><div class="lbl">Total Unpaid (Imported)</div></div>
+    <div class="kpi green"><div class="val">${fmtNum(matched)}</div><div class="lbl">Billing Matched (Paid)</div></div>
+    <div class="kpi amber"><div class="val">${fmtNum(pending)}</div><div class="lbl">Still Pending</div></div>
+    <div class="kpi blue"><div class="val">${fmtNum(amtPending)}</div><div class="lbl">Amount Pending (Rs)</div></div>
+    <div class="kpi blue"><div class="val">${fmtNum(staffCount)}</div><div class="lbl">Staff Involved</div></div>
+  `;
+
+  // Staff-wise summary
+  const staffStats = {};
+  UNPAID_DATA.forEach(d=>{
+    const s = d.marketedBy || 'Unassigned';
+    if(!staffStats[s]) staffStats[s] = {count:0, matched:0, amtPending:0, followed:0};
+    staffStats[s].count++;
+    const st = unpaidStatus(d);
+    if(st==='Matched') staffStats[s].matched++;
+    else staffStats[s].amtPending += (d.amt||0);
+    if((UNPAID_FOLLOWUPS[normUser(d.u)]||{}).followUp) staffStats[s].followed++;
+  });
+  const staffKeys = Object.keys(staffStats).sort((a,b)=> staffStats[b].amtPending - staffStats[a].amtPending);
+  document.getElementById('unpaidStaffTable').innerHTML = staffKeys.length ? staffKeys.map(s=>{
+    const v = staffStats[s];
+    const rem = v.count - v.matched;
+    return `<tr>
+      <td>${s}</td>
+      <td class="ysd-num">${fmtNum(v.count)}</td>
+      <td class="ysd-num" style="color:var(--green);font-weight:600">${fmtNum(v.matched)}</td>
+      <td class="ysd-num" style="color:var(--red);font-weight:600">${fmtNum(rem)}</td>
+      <td class="ysd-num">${fmtNum(v.amtPending)}</td>
+      <td class="ysd-num">${v.followed}/${v.count}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6" class="empty">Import file garnus pahile</td></tr>`;
+
+  // Filters (OLT + Staff)
+  const oltFilterEl = document.getElementById('unpaidOltFilter');
+  const staffFilterEl = document.getElementById('unpaidStaffFilter');
+  const prevOlt = oltFilterEl.value, prevStaff = staffFilterEl.value;
+  const oltSet = [...new Set(UNPAID_DATA.map(d=>d.olt))].sort();
+  oltFilterEl.innerHTML = '<option value="">All OLTs</option>' + oltSet.map(o=>`<option value="${o}">${o}</option>`).join('');
+  staffFilterEl.innerHTML = '<option value="">All Staff</option>' + staffKeys.map(s=>`<option value="${s.replace(/"/g,'&quot;')}">${s}</option>`).join('');
+  if(oltSet.includes(prevOlt)) oltFilterEl.value = prevOlt;
+  if(staffKeys.includes(prevStaff)) staffFilterEl.value = prevStaff;
+
+  renderUnpaidDetail();
+}
+
+function renderUnpaidDetail(){
+  const filtered = unpaidGetFiltered();
+  document.getElementById('unpaidDetailCount').textContent = filtered.length + ' of ' + UNPAID_DATA.length + ' users';
+  const tbody = document.getElementById('unpaidDetailTable');
+  const frag = document.createDocumentFragment();
+  filtered.slice(0,500).forEach(d=>{
+    const st = unpaidStatus(d);
+    const rec = UNPAID_FOLLOWUPS[normUser(d.u)] || {};
+    const days = daysSince(d.created);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${billedUsernameHtml(d.u)}</td>
+      <td><span class="ysd-olt-pill ysd-olt-${d.olt}">${d.olt||'—'}</span></td>
+      <td>${d.marketedBy||'—'}</td>
+      <td>${d.plan||'—'}</td>
+      <td>${d.created||'—'}</td>
+      <td class="ysd-num">${days===null?'—':days}</td>
+      <td class="ysd-num">${d.amt ? d.amt.toLocaleString('en-IN',{maximumFractionDigits:0}) : '—'}</td>
+      <td class="ysd-status-${st==='Matched'?'Matched':'Remaining'}">${st}</td>
+      <td><button class="followBtn unpaidFollowBtn ${rec.followUp?'done':''}" data-uname="${d.u}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button></td>
+      <td>${rec.followUp ? remarksSelectHtml(d.u, rec.remarks).replace('remarksInput', 'remarksInput unpaidRemarksInput') : ''}</td>
+    `;
+    frag.appendChild(tr);
+  });
+  tbody.innerHTML = '';
+  tbody.appendChild(frag);
+  if(filtered.length>500){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="10" style="text-align:center;color:var(--text-soft);padding:10px;">…${filtered.length-500} more rows — narrow filters or export</td>`;
+    tbody.appendChild(tr);
+  }
+}
+['unpaidSearchBox','unpaidOltFilter','unpaidStaffFilter','unpaidStatusFilter'].forEach(id=>{
+  const el = document.getElementById(id);
+  el.addEventListener('input', renderUnpaidDetail);
+  el.addEventListener('change', renderUnpaidDetail);
+});
+
+document.getElementById('unpaidDetailTable').addEventListener('click', (e)=>{
+  if(e.target.classList.contains('unpaidFollowBtn')){
+    if(!CURRENT_STAFF){ alert('Pahile login garnus.'); return; }
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = UNPAID_FOLLOWUPS[key] || { username: uname, followUp:false, remarks:'' };
+    rec.followUp = !rec.followUp;
+    if(!rec.followUp){ rec.remarks=''; rec.followedUpBy=null; rec.followedUpByName=null; }
+    else { rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
+    UNPAID_FOLLOWUPS[key] = rec;
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'unpaid');
+    renderUnpaid();
+  }
+});
+document.getElementById('unpaidDetailTable').addEventListener('change', (e)=>{
+  if(e.target.classList.contains('unpaidRemarksInput')){
+    if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = UNPAID_FOLLOWUPS[key] || { username: uname, followUp:true, remarks:'' };
+    rec.remarks = e.target.value;
+    rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name;
+    UNPAID_FOLLOWUPS[key] = rec;
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'unpaid');
+  }
+});
+
+document.getElementById('unpaidExportCsvBtn').addEventListener('click', ()=>{
+  const rows = unpaidGetFiltered().map(d=>{
+    const rec = UNPAID_FOLLOWUPS[normUser(d.u)] || {};
+    return {
+      Username: d.u, OLT: d.olt||'', MarketedBy: d.marketedBy||'', Plan: d.plan||'',
+      OrderDate: d.created||'', DaysUnpaid: daysSince(d.created), Amount: d.amt||'',
+      BillingStatus: unpaidStatus(d), FollowedUp: rec.followUp?'Yes':'No', Remarks: rec.remarks||''
+    };
+  });
+  let csv = 'Username,OLT,MarketedBy,Plan,OrderDate,DaysUnpaid,Amount,BillingStatus,FollowedUp,Remarks\n';
+  rows.forEach(r=>{ csv += `"${r.Username}","${r.OLT}","${r.MarketedBy}","${(r.Plan||'').replace(/"/g,'""')}","${r.OrderDate}",${r.DaysUnpaid},${r.Amount},"${r.BillingStatus}","${r.FollowedUp}","${(r.Remarks||'').replace(/"/g,'""')}"\n`; });
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'unpaid_followup.csv';
+  a.click();
+});
+
+renderUnpaid();
 </script>
 </body>
 </html>
