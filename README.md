@@ -1246,6 +1246,79 @@ function fbLoadAndMerge(){
       renderUnpaid();
     }).catch(err=> console.error('Unpaid follow-up load failed', err));
   }catch(err){ console.error('Unpaid follow-up load error', err); }
+  // load imported billing data (shared Billing Import) — persists until re-imported/reset
+  fbLoadBillingData();
+  // load imported unpaid follow-up dataset (New Installation file) — persists until re-imported/reset
+  fbLoadUnpaidData();
+}
+
+// ---------- Firebase sync (Billing Import data — shared BILLING_PAID/BILLING_AMOUNT/BILLING_META) ----------
+function fbSaveBillingData(){
+  if(!fbdb) return;
+  try{
+    fbdb.ref('expiryTracker/billingImportData').set({
+      fileName: BILLING_META.fileName || '',
+      count: BILLING_META.count || 0,
+      paidUsers: Array.from(BILLING_PAID),
+      amounts: BILLING_AMOUNT || {},
+      updatedAt: Date.now(),
+      updatedBy: CURRENT_STAFF ? CURRENT_STAFF.name : null
+    }).catch(err=> console.error('Billing data save failed', err));
+  }catch(err){ console.error('Billing data save error', err); }
+}
+
+function fbLoadBillingData(){
+  if(!fbdb) return;
+  try{
+    fbdb.ref('expiryTracker/billingImportData').once('value').then(snap=>{
+      const data = snap.val();
+      if(!data) return; // nothing saved yet — keep current in-memory state
+      BILLING_PAID = new Set(data.paidUsers || []);
+      BILLING_AMOUNT = data.amounts || {};
+      BILLING_META = { fileName: data.fileName || '', count: data.count || BILLING_PAID.size };
+      render();
+      renderHighRisk();
+      renderYSD();
+      renderUnpaid();
+      renderSummary();
+    }).catch(err=> console.error('Billing data load failed', err));
+  }catch(err){ console.error('Billing data load error', err); }
+}
+
+// ---------- Firebase sync (Unpaid Follow-up import dataset — UNPAID_DATA) ----------
+function fbSaveUnpaidData(fileName){
+  if(!fbdb) return;
+  try{
+    fbdb.ref('expiryTracker/unpaidImportData').set({
+      fileName: fileName || '',
+      data: UNPAID_DATA,
+      updatedAt: Date.now(),
+      updatedBy: CURRENT_STAFF ? CURRENT_STAFF.name : null
+    }).catch(err=> console.error('Unpaid import data save failed', err));
+  }catch(err){ console.error('Unpaid import data save error', err); }
+}
+
+function fbLoadUnpaidData(){
+  if(!fbdb) return;
+  try{
+    fbdb.ref('expiryTracker/unpaidImportData').once('value').then(snap=>{
+      const data = snap.val();
+      if(!data || !Array.isArray(data.data) || !data.data.length) return; // nothing saved yet
+      UNPAID_DATA = data.data;
+      const tag = document.getElementById('unpaidDataSourceTag');
+      if(tag){
+        tag.textContent = 'Imported · ' + (data.fileName || 'synced from Firebase');
+        tag.classList.add('imported');
+      }
+      renderUnpaid();
+    }).catch(err=> console.error('Unpaid import data load failed', err));
+  }catch(err){ console.error('Unpaid import data load error', err); }
+}
+
+function fbClearUnpaidData(){
+  if(!fbdb) return;
+  try{ fbdb.ref('expiryTracker/unpaidImportData').remove().catch(err=> console.error('Unpaid import data clear failed', err)); }
+  catch(err){ console.error('Unpaid import data clear error', err); }
 }
 
 function setSyncStatus(msg, isError){
@@ -1335,6 +1408,7 @@ document.getElementById('billingFileInput').addEventListener('change', (e)=>{
     renderYSD();
     renderUnpaid();
     renderSummary();
+    fbSaveBillingData();
   };
   reader.readAsArrayBuffer(file);
 });
@@ -1977,6 +2051,7 @@ async function unpaidProcessImport(){
     document.getElementById('unpaidDataSourceTag').classList.add('imported');
     unpaidShowStatus(`Imported successfully — ${UNPAID_DATA.length} unpaid users. Billing Status shared Billing Import bata aauxa.`, 'ok');
     renderUnpaid();
+    fbSaveUnpaidData(file.name);
   }catch(err){
     console.error(err);
     unpaidShowStatus('Import failed: ' + err.message, 'err');
@@ -1990,6 +2065,7 @@ document.getElementById('unpaidResetBtn').addEventListener('click', ()=>{
   unpaidShowStatus('Cleared.', 'info');
   document.getElementById('unpaidFileInput').value = '';
   renderUnpaid();
+  fbClearUnpaidData();
 });
 
 function daysSince(dateStr){
