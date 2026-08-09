@@ -419,7 +419,6 @@ select.remarksInput{
     <button class="secondary" id="billingImportBtn">Billing Import</button>
     <input type="file" id="billingFileInput" accept=".xlsx,.xls,.csv">
     <button class="ghost" id="exportAllBtn">Export CSV</button>
-    <button class="ghost" id="refreshDataBtn" title="Firebase बाट latest data ल्याउँछ — browser refresh गर्नु पर्दैन">🔄 Refresh Data</button>
     <span id="staffBadge" style="display:none;"></span>
   </div>
 </div>
@@ -584,21 +583,6 @@ select.remarksInput{
       </div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head"><h2>Disable Age Summary <span class="sub" style="font-size:11px;color:var(--text-soft);">Days since expiry (disable) — 0-30 / 30-90 / 90+ days</span></h2></div>
-      <div class="panel-body">
-        <div class="scrollx">
-        <table>
-          <thead><tr>
-            <th>Disable Category</th><th class="ysd-num">Total</th><th class="ysd-num">Matched</th><th class="ysd-num">Remaining</th>
-            <th class="ysd-num">Match %</th><th style="width:180px">Progress</th>
-          </tr></thead>
-          <tbody id="ysdDisableCatTable"></tbody>
-        </table>
-        </div>
-      </div>
-    </div>
-
     <div class="ysd-grid2">
       <div class="panel">
         <div class="panel-head"><h2>Remaining — Create Year Category <span class="sub" id="ysdRemTag" style="font-size:11px;color:var(--text-soft);"></span></h2></div>
@@ -622,19 +606,12 @@ select.remarksInput{
             <option value="Remaining">Remaining</option>
           </select>
           <select id="ysdYearFilter"><option value="">All Create Years</option></select>
-          <select id="ysdDisableFilter">
-            <option value="">All Disable Ages</option>
-            <option value="0-30 Days">0-30 Days</option>
-            <option value="30-90 Days">30-90 Days</option>
-            <option value="90+ Days">90+ Days</option>
-            <option value="Not Disabled">Not Disabled</option>
-          </select>
         </div>
         <div class="ysd-table-scroll">
           <table>
             <thead><tr>
               <th>Username</th><th>OLT</th><th>Created</th><th>Expiry</th>
-              <th class="ysd-num">Fcst Revenue</th><th>Status</th><th class="ysd-num">Days Disabled</th>
+              <th class="ysd-num">Fcst Revenue</th><th>Status</th>
             </tr></thead>
             <tbody id="ysdDetailTable"></tbody>
           </table>
@@ -766,6 +743,24 @@ select.remarksInput{
       </div>
       <div class="panel-body">
         <div class="kpis" id="billingBySourceKpis"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="conversionPanelWrap">
+      <div class="panel-head">
+        <h2>🔁 Follow-up → Conversion Report</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Follow-up gareko paxi kati renew/bill vayo — section-wise (Expiry Users, High Risk, Unpaid)</span>
+      </div>
+      <div class="panel-body">
+        <div class="scrollx">
+        <table>
+          <thead><tr>
+            <th>Section</th><th>Total</th><th>Followed-up</th><th>Followed-up &amp; Paid (Converted)</th>
+            <th>Followed-up but Still Unpaid</th><th>Conversion Rate</th><th>Amount Recovered (NPR)</th>
+          </tr></thead>
+          <tbody id="conversionTbody"></tbody>
+        </table>
+        </div>
       </div>
     </div>
 
@@ -1237,7 +1232,6 @@ function fbLoadAndMerge(){
           r.followUp = !!rec.followUp; r.remarks = rec.remarks || '';
           r.followedUpBy = rec.followedUpBy || null;
           r.followedUpByName = rec.followedUpByName || null;
-          r.followUpAt = rec.updatedAt || null;
         }
       });
       setSyncStatus('Synced with Firebase ✓');
@@ -1270,79 +1264,6 @@ function fbLoadAndMerge(){
       renderUnpaid();
     }).catch(err=> console.error('Unpaid follow-up load failed', err));
   }catch(err){ console.error('Unpaid follow-up load error', err); }
-  // load imported billing data (shared Billing Import) — persists until re-imported/reset
-  fbLoadBillingData();
-  // load imported unpaid follow-up dataset (New Installation file) — persists until re-imported/reset
-  fbLoadUnpaidData();
-}
-
-// ---------- Firebase sync (Billing Import data — shared BILLING_PAID/BILLING_AMOUNT/BILLING_META) ----------
-function fbSaveBillingData(){
-  if(!fbdb) return;
-  try{
-    fbdb.ref('expiryTracker/billingImportData').set({
-      fileName: BILLING_META.fileName || '',
-      count: BILLING_META.count || 0,
-      paidUsers: Array.from(BILLING_PAID),
-      amounts: BILLING_AMOUNT || {},
-      updatedAt: Date.now(),
-      updatedBy: CURRENT_STAFF ? CURRENT_STAFF.name : null
-    }).catch(err=> console.error('Billing data save failed', err));
-  }catch(err){ console.error('Billing data save error', err); }
-}
-
-function fbLoadBillingData(){
-  if(!fbdb) return;
-  try{
-    fbdb.ref('expiryTracker/billingImportData').once('value').then(snap=>{
-      const data = snap.val();
-      if(!data) return; // nothing saved yet — keep current in-memory state
-      BILLING_PAID = new Set(data.paidUsers || []);
-      BILLING_AMOUNT = data.amounts || {};
-      BILLING_META = { fileName: data.fileName || '', count: data.count || BILLING_PAID.size };
-      render();
-      renderHighRisk();
-      renderYSD();
-      renderUnpaid();
-      renderSummary();
-    }).catch(err=> console.error('Billing data load failed', err));
-  }catch(err){ console.error('Billing data load error', err); }
-}
-
-// ---------- Firebase sync (Unpaid Follow-up import dataset — UNPAID_DATA) ----------
-function fbSaveUnpaidData(fileName){
-  if(!fbdb) return;
-  try{
-    fbdb.ref('expiryTracker/unpaidImportData').set({
-      fileName: fileName || '',
-      data: UNPAID_DATA,
-      updatedAt: Date.now(),
-      updatedBy: CURRENT_STAFF ? CURRENT_STAFF.name : null
-    }).catch(err=> console.error('Unpaid import data save failed', err));
-  }catch(err){ console.error('Unpaid import data save error', err); }
-}
-
-function fbLoadUnpaidData(){
-  if(!fbdb) return;
-  try{
-    fbdb.ref('expiryTracker/unpaidImportData').once('value').then(snap=>{
-      const data = snap.val();
-      if(!data || !Array.isArray(data.data) || !data.data.length) return; // nothing saved yet
-      UNPAID_DATA = data.data;
-      const tag = document.getElementById('unpaidDataSourceTag');
-      if(tag){
-        tag.textContent = 'Imported · ' + (data.fileName || 'synced from Firebase');
-        tag.classList.add('imported');
-      }
-      renderUnpaid();
-    }).catch(err=> console.error('Unpaid import data load failed', err));
-  }catch(err){ console.error('Unpaid import data load error', err); }
-}
-
-function fbClearUnpaidData(){
-  if(!fbdb) return;
-  try{ fbdb.ref('expiryTracker/unpaidImportData').remove().catch(err=> console.error('Unpaid import data clear failed', err)); }
-  catch(err){ console.error('Unpaid import data clear error', err); }
 }
 
 function setSyncStatus(msg, isError){
@@ -1427,15 +1348,46 @@ document.getElementById('billingFileInput').addEventListener('change', (e)=>{
       }
     });
     BILLING_META = { fileName:file.name, count:BILLING_PAID.size };
+    fbSaveBillingData();
     render();
     renderHighRisk();
     renderYSD();
     renderUnpaid();
     renderSummary();
-    fbSaveBillingData();
   };
   reader.readAsArrayBuffer(file);
 });
+
+// ---------- Firebase sync: Billing data (so all staff/browsers see the same
+// imported billing without re-uploading the file each time) ----------
+function fbSaveBillingData(){
+  if(!fbdb) return;
+  try{
+    fbdb.ref('expiryTracker/billingData').set({
+      paid: Array.from(BILLING_PAID),
+      amounts: BILLING_AMOUNT,
+      meta: BILLING_META,
+      updatedAt: Date.now(),
+      updatedBy: CURRENT_STAFF ? CURRENT_STAFF.id : null
+    }).catch(err=> console.error('Billing sync failed', err));
+  }catch(err){ console.error('Billing sync error', err); }
+}
+function fbLoadBillingData(){
+  if(!fbdb) return;
+  fbdb.ref('expiryTracker/billingData').once('value').then(snap=>{
+    const d = snap.val();
+    if(!d) return;
+    BILLING_PAID = new Set(d.paid || []);
+    BILLING_AMOUNT = d.amounts || {};
+    BILLING_META = d.meta || { fileName:'', count:BILLING_PAID.size };
+    render();
+    renderHighRisk();
+    renderYSD();
+    renderUnpaid();
+    renderSummary();
+  }).catch(err=> console.error('Billing load failed', err));
+}
+fbLoadBillingData();
 
 document.getElementById('exportAllBtn').addEventListener('click', ()=>{
   exportCSV(filteredRows(), 'expired_users_all.csv');
@@ -1471,49 +1423,6 @@ loadEmbedded();
 renderHighRisk();
 
 // ---------- Staff login flow ----------
-const SESSION_STORAGE_KEY = 'expiryTrackerSession';
-const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-function saveSession(staff){
-  try{
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ staff, loginAt: Date.now() }));
-  }catch(err){ console.error('Session save failed', err); }
-}
-function clearSession(){
-  try{ localStorage.removeItem(SESSION_STORAGE_KEY); }catch(err){ console.error('Session clear failed', err); }
-}
-function loadSession(){
-  try{
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-    if(!raw) return null;
-    const parsed = JSON.parse(raw);
-    if(!parsed || !parsed.staff || !parsed.loginAt) return null;
-    if(Date.now() - parsed.loginAt > SESSION_MAX_AGE_MS){ clearSession(); return null; }
-    return parsed;
-  }catch(err){ console.error('Session load failed', err); return null; }
-}
-
-function applyLogin(staff, isRestore){
-  CURRENT_STAFF = staff;
-  SESSION_START = Date.now();
-  document.getElementById('loginOverlay').style.display = 'none';
-  const badge = document.getElementById('staffBadge');
-  badge.style.display = 'inline-flex';
-  badge.innerHTML = `👤 ${CURRENT_STAFF.name} <button id="logoutBtn">Logout</button>`;
-  document.getElementById('logoutBtn').addEventListener('click', ()=>{
-    stopHeartbeat();
-    CURRENT_STAFF = null;
-    clearSession();
-    document.getElementById('loginOverlay').style.display = 'flex';
-    document.getElementById('loginUser').value='';
-    document.getElementById('loginPass').value='';
-    badge.style.display = 'none';
-  });
-  startHeartbeat();
-  if(!isRestore) fbLogSession('login');
-  renderSummary();
-}
-
 function doLogin(){
   const idRaw = document.getElementById('loginUser').value.trim().toLowerCase();
   const pass = document.getElementById('loginPass').value;
@@ -1524,35 +1433,27 @@ function doLogin(){
     return;
   }
   errEl.textContent = '';
-  const staff = { id: idRaw, name: rec.name, role: rec.role };
-  saveSession(staff); // 24 ghanta samma refresh garda pani password nasodhos
-  applyLogin(staff, false);
+  CURRENT_STAFF = { id: idRaw, name: rec.name, role: rec.role };
+  SESSION_START = Date.now();
+  document.getElementById('loginOverlay').style.display = 'none';
+  const badge = document.getElementById('staffBadge');
+  badge.style.display = 'inline-flex';
+  badge.innerHTML = `👤 ${CURRENT_STAFF.name} <button id="logoutBtn">Logout</button>`;
+  document.getElementById('logoutBtn').addEventListener('click', ()=>{
+    stopHeartbeat();
+    CURRENT_STAFF = null;
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('loginUser').value='';
+    document.getElementById('loginPass').value='';
+    badge.style.display = 'none';
+  });
+  startHeartbeat();
+  fbLogSession('login');
+  renderSummary();
 }
 document.getElementById('loginBtn').addEventListener('click', doLogin);
 document.getElementById('loginPass').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('loginUser').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
-
-// Restore session on page load if a valid (< 24hr) login exists in this browser
-(function restoreSessionOnLoad(){
-  const session = loadSession();
-  if(session && session.staff){
-    applyLogin(session.staff, true);
-  }
-})();
-
-// ---------- Manual "Refresh Data" (pulls latest from Firebase without a full browser reload) ----------
-document.getElementById('refreshDataBtn').addEventListener('click', ()=>{
-  const btn = document.getElementById('refreshDataBtn');
-  btn.disabled = true;
-  const origText = btn.textContent;
-  btn.textContent = '🔄 Refreshing…';
-  fbLoadAndMerge();
-  renderYSD();
-  renderHighRisk();
-  renderUnpaid();
-  renderSummary();
-  setTimeout(()=>{ btn.disabled = false; btn.textContent = origText; }, 1200);
-});
 
 // ---------- Time / effort tracking ----------
 let HEARTBEAT_TIMER = null;
@@ -1693,8 +1594,58 @@ function renderBillingBySource(){
   `;
 }
 
+function renderConversion(){
+  const tbody = document.getElementById('conversionTbody');
+  if(!tbody) return;
+  const oltSel = document.getElementById('oltFilter') ? document.getElementById('oltFilter').value : 'ALL';
+
+  function amtFor(username){
+    const key = normUser(username);
+    return BILLING_AMOUNT[key] != null ? BILLING_AMOUNT[key] : 0;
+  }
+
+  function row(label, total, followedList, isBilledFn, amtFn){
+    const followedUp = followedList.length;
+    const converted = followedList.filter(isBilledFn);
+    const convertedCount = converted.length;
+    const stillUnpaid = followedUp - convertedCount;
+    const rate = followedUp ? ((convertedCount/followedUp)*100).toFixed(1) + '%' : '—';
+    const amtRecovered = converted.reduce((s,x)=> s + amtFn(x), 0);
+    return `<tr>
+      <td><b>${label}</b></td>
+      <td>${fmtNum(total)}</td>
+      <td>${fmtNum(followedUp)}</td>
+      <td style="color:var(--green);font-weight:600">${fmtNum(convertedCount)}</td>
+      <td style="color:var(--red);font-weight:600">${fmtNum(stillUnpaid)}</td>
+      <td>${rate}</td>
+      <td>${fmtNum(amtRecovered)}</td>
+    </tr>`;
+  }
+
+  // 1) Expiry Users
+  const scopeRows = RAW.filter(r=> oltSel==='ALL' || r.olt===oltSel);
+  const expFollowed = scopeRows.filter(r=>r.followUp);
+  const rowExp = row('Expiry Users', scopeRows.length, expFollowed,
+    r=> isBilled(r.username), r=> (amtFor(r.username) || r.revenue));
+
+  // 2) High Risk
+  const scopeHR = (window.__HIGH_RISK_DATA__ || []).filter(u=> oltSel==='ALL' || u.OLT===oltSel);
+  const hrFollowed = scopeHR.filter(u=> (HR_FOLLOWUPS[normUser(u.Username)]||{}).followUp);
+  const rowHR = row('High Risk Users', scopeHR.length, hrFollowed,
+    u=> isBilled(u.Username), u=> amtFor(u.Username));
+
+  // 3) Unpaid Follow-up
+  const scopeUnpaid = UNPAID_DATA.filter(d=> oltSel==='ALL' || d.olt===oltSel);
+  const unpaidFollowed = scopeUnpaid.filter(d=> (UNPAID_FOLLOWUPS[normUser(d.u)]||{}).followUp);
+  const rowUnpaid = row('Unpaid Follow-up', scopeUnpaid.length, unpaidFollowed,
+    d=> isBilled(d.u), d=> (amtFor(d.u) || d.amt || 0));
+
+  tbody.innerHTML = rowExp + rowHR + rowUnpaid;
+}
+
 function renderSummary(){
   renderBillingBySource();
+  renderConversion();
   const wrap = document.getElementById('summaryPanel');
   if(!wrap) return;
   const oltSel = document.getElementById('oltFilter') ? document.getElementById('oltFilter').value : 'ALL';
@@ -1736,71 +1687,6 @@ function renderSummary(){
     ensure(id, STAFF_CREDENTIALS[id] ? STAFF_CREDENTIALS[id].name : id);
   });
 
-  // ---- Follow-up Timing Report (day-wise & hour-wise, based on when follow-up was marked) ----
-  const timingEvents = [];
-  RAW.forEach(r=>{
-    if(oltSel!=='ALL' && r.olt!==oltSel) return;
-    if(r.followUp && r.followUpAt) timingEvents.push(r.followUpAt);
-  });
-  Object.values(HR_FOLLOWUPS).forEach(rec=>{
-    if(oltSel!=='ALL' && hrOltByUser[normUser(rec.username)]!==oltSel) return;
-    if(rec.followUp && rec.updatedAt) timingEvents.push(rec.updatedAt);
-  });
-  Object.values(UNPAID_FOLLOWUPS).forEach(rec=>{
-    if(rec.followUp && rec.updatedAt) timingEvents.push(rec.updatedAt);
-  });
-  const dayMap = {}, hourMap = {};
-  for(let h=0; h<24; h++) hourMap[h] = 0;
-  timingEvents.forEach(ts=>{
-    const d = new Date(ts);
-    if(isNaN(d)) return;
-    const dayKey = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    dayMap[dayKey] = (dayMap[dayKey]||0) + 1;
-    hourMap[d.getHours()] = (hourMap[d.getHours()]||0) + 1;
-  });
-  const dayKeys = Object.keys(dayMap).sort().reverse().slice(0, 30); // most recent 30 days
-  const maxDayCount = Math.max(1, ...dayKeys.map(k=>dayMap[k]));
-  const maxHourCount = Math.max(1, ...Object.values(hourMap));
-  function hourLabel(h){
-    const ampm = h < 12 ? 'AM' : 'PM';
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    return h12 + ' ' + ampm;
-  }
-  let timingHtml = '';
-  if(timingEvents.length){
-    timingHtml = `<div class="panel" style="margin-top:18px;">
-      <div class="panel-head"><h2>Follow-up Timing Report <span class="sub" style="font-size:11px;color:var(--text-soft);font-weight:400;">Follow-up marked bhako date/time ko basis ma — ${fmtNum(timingEvents.length)} total follow-ups</span></h2></div>
-      <div class="panel-body">
-        <div class="ysd-grid2">
-          <div>
-            <div style="font-size:12px;font-weight:600;color:var(--text-soft);margin-bottom:8px;">Day-wise (last ${dayKeys.length} days with activity)</div>
-            <div class="ysd-table-scroll" style="max-height:280px;">
-              <table><thead><tr><th>Date</th><th class="ysd-num">Follow-ups</th><th style="width:120px">Bar</th></tr></thead><tbody>
-              ${dayKeys.map(k=>`<tr>
-                <td>${k}</td>
-                <td class="ysd-num">${fmtNum(dayMap[k])}</td>
-                <td><div class="ysd-bar-track"><div class="ysd-bar-fill" style="width:${(dayMap[k]/maxDayCount*100).toFixed(0)}%"></div></div></td>
-              </tr>`).join('')}
-              </tbody></table>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:12px;font-weight:600;color:var(--text-soft);margin-bottom:8px;">Hour-wise (0–23 hr, all days combined)</div>
-            <div class="ysd-table-scroll" style="max-height:280px;">
-              <table><thead><tr><th>Hour</th><th class="ysd-num">Follow-ups</th><th style="width:120px">Bar</th></tr></thead><tbody>
-              ${Array.from({length:24}, (_,h)=>h).filter(h=>hourMap[h]>0).map(h=>`<tr>
-                <td>${hourLabel(h)}</td>
-                <td class="ysd-num">${fmtNum(hourMap[h])}</td>
-                <td><div class="ysd-bar-track"><div class="ysd-bar-fill" style="width:${(hourMap[h]/maxHourCount*100).toFixed(0)}%"></div></div></td>
-              </tr>`).join('')}
-              </tbody></table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>`;
-  }
-
   // ---- Overall follow-up status (always shown, regardless of per-staff data) ----
   const scopeRows = RAW.filter(r=> oltSel==='ALL' || r.olt===oltSel);
   const totalExpiring = scopeRows.length;
@@ -1817,7 +1703,7 @@ function renderSummary(){
 
   const ids = Object.keys(staffStats);
   if(!ids.length){
-    wrap.innerHTML = statusHtml + `<div class="note">Halsam kunai staff le follow-up gareko chaina. Login garera follow-up marking start garnus.</div>` + timingHtml;
+    wrap.innerHTML = statusHtml + `<div class="note">Halsam kunai staff le follow-up gareko chaina. Login garera follow-up marking start garnus.</div>`;
     return;
   }
   let html = statusHtml + `<div class="scrollx"><table><thead><tr>
@@ -1836,7 +1722,7 @@ function renderSummary(){
       <td>${fmtNum(s.collected)}</td>
     </tr>`;
   });
-  html += '</tbody></table></div>' + timingHtml;
+  html += '</tbody></table></div>';
   wrap.innerHTML = html;
 }
 
@@ -1865,21 +1751,6 @@ function ysdInferOlt(username){
   return 'UNKNOWN';
 }
 function ysdStatus(d){ return isBilled(d.u) ? 'Matched' : 'Remaining'; }
-function ysdDaysDisabled(d){
-  if(!d.expiry) return null;
-  const exp = new Date(d.expiry + 'T00:00:00');
-  if(isNaN(exp)) return null;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const diff = Math.floor((today - exp) / 86400000);
-  return diff; // negative = not yet expired/disabled
-}
-function ysdDisableCategory(d){
-  const days = ysdDaysDisabled(d);
-  if(days === null || days < 0) return 'Not Disabled';
-  if(days <= 30) return '0-30 Days';
-  if(days <= 90) return '30-90 Days';
-  return '90+ Days';
-}
 
 function loadYSDInitial(){
   YSD_DATA = window.__YSD_DEFAULT_DATA__ || [];
@@ -1939,37 +1810,6 @@ function renderYSD(){
     oltTbody.appendChild(tr);
   }
 
-  // Disable-age category breakdown (0-30 / 30-90 / 90+ days since expiry)
-  const disableCatOrder = ['0-30 Days','30-90 Days','90+ Days','Not Disabled'];
-  const disableCatStats = {};
-  disableCatOrder.forEach(c=> disableCatStats[c] = {total:0, matched:0});
-  YSD_DATA.forEach(d=>{
-    const c = ysdDisableCategory(d);
-    if(!disableCatStats[c]) disableCatStats[c] = {total:0, matched:0};
-    disableCatStats[c].total++;
-    if(ysdStatus(d)==='Matched') disableCatStats[c].matched++;
-  });
-  const disableCatTbody = document.getElementById('ysdDisableCatTable');
-  if(disableCatTbody){
-    disableCatTbody.innerHTML = '';
-    disableCatOrder.forEach(c=>{
-      const s = disableCatStats[c];
-      if(!s || !s.total) return;
-      const rem = s.total - s.matched;
-      const pct = s.total ? (s.matched/s.total*100) : 0;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${c}</td>
-        <td class="ysd-num">${fmtNum(s.total)}</td>
-        <td class="ysd-num" style="color:var(--green);font-weight:600">${fmtNum(s.matched)}</td>
-        <td class="ysd-num" style="color:var(--red);font-weight:600">${fmtNum(rem)}</td>
-        <td class="ysd-num">${pct.toFixed(1)}%</td>
-        <td><div class="ysd-bar-track"><div class="ysd-bar-fill" style="width:${pct}%"></div></div></td>
-      `;
-      disableCatTbody.appendChild(tr);
-    });
-  }
-
   // Year chart
   const yearSet = [...new Set(YSD_DATA.filter(d=>ysdStatus(d)==='Remaining').map(d=>d.cy||'Unknown'))].sort((a,b)=>{
     if(a==='Unknown') return 1; if(b==='Unknown') return -1; return a-b;
@@ -2022,13 +1862,11 @@ function ysdGetFiltered(){
   const oltF = document.getElementById('ysdOltFilterLocal').value;
   const stF = document.getElementById('ysdStatusFilter').value;
   const yF = document.getElementById('ysdYearFilter').value;
-  const dF = document.getElementById('ysdDisableFilter') ? document.getElementById('ysdDisableFilter').value : '';
   return YSD_DATA.filter(d=>{
     if(q && !d.u.toLowerCase().includes(q)) return false;
     if(oltF && d.olt !== oltF) return false;
     if(stF && ysdStatus(d) !== stF) return false;
     if(yF && String(d.cy) !== yF) return false;
-    if(dF && ysdDisableCategory(d) !== dF) return false;
     return true;
   });
 }
@@ -2041,8 +1879,6 @@ function renderYSDDetail(){
   const frag = document.createDocumentFragment();
   filtered.slice(0,500).forEach(d=>{
     const st = ysdStatus(d);
-    const days = ysdDaysDisabled(d);
-    const daysLabel = (days === null) ? '—' : (days < 0 ? 'Not yet' : fmtNum(days));
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${billedUsernameHtml(d.u)}</td>
@@ -2051,18 +1887,17 @@ function renderYSDDetail(){
       <td>${d.expiry||'—'}</td>
       <td class="ysd-num">${d.rev? d.rev.toLocaleString('en-US',{maximumFractionDigits:0}) : '—'}</td>
       <td class="ysd-status-${st}">${st}</td>
-      <td class="ysd-num">${daysLabel}</td>
     `;
     frag.appendChild(tr);
   });
   tbody.appendChild(frag);
   if(filtered.length>500){
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="7" style="text-align:center;color:var(--text-soft);padding:10px;">…${filtered.length-500} more rows — narrow filters or export</td>`;
+    tr.innerHTML = `<td colspan="6" style="text-align:center;color:var(--text-soft);padding:10px;">…${filtered.length-500} more rows — narrow filters or export</td>`;
     tbody.appendChild(tr);
   }
 }
-['ysdSearchBox','ysdOltFilterLocal','ysdStatusFilter','ysdYearFilter','ysdDisableFilter'].forEach(id=>{
+['ysdSearchBox','ysdOltFilterLocal','ysdStatusFilter','ysdYearFilter'].forEach(id=>{
   const el = document.getElementById(id);
   el.addEventListener('input', renderYSDDetail);
   el.addEventListener('change', renderYSDDetail);
@@ -2164,11 +1999,10 @@ document.getElementById('ysdResetBtn').addEventListener('click', ()=>{
 document.getElementById('ysdExportCsvBtn').addEventListener('click', ()=>{
   const rows = ysdGetFiltered().map(d=>({
     Username: d.u, OLT: d.olt||'', CreateYear: d.cy||'', Created: d.created||'',
-    Expiry: d.expiry||'', ForecastRevenue: d.rev||'', Status: ysdStatus(d),
-    DaysDisabled: (ysdDaysDisabled(d) ?? ''), DisableCategory: ysdDisableCategory(d)
+    Expiry: d.expiry||'', ForecastRevenue: d.rev||'', Status: ysdStatus(d)
   }));
-  let csv = 'Username,OLT,CreateYear,Created,Expiry,ForecastRevenue,Status,DaysDisabled,DisableCategory\n';
-  rows.forEach(r=>{ csv += `${r.Username},${r.OLT},${r.CreateYear},${r.Created},${r.Expiry},${r.ForecastRevenue},${r.Status},${r.DaysDisabled},${r.DisableCategory}\n`; });
+  let csv = 'Username,OLT,CreateYear,Created,Expiry,ForecastRevenue,Status\n';
+  rows.forEach(r=>{ csv += `${r.Username},${r.OLT},${r.CreateYear},${r.Created},${r.Expiry},${r.ForecastRevenue},${r.Status}\n`; });
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2242,8 +2076,8 @@ async function unpaidProcessImport(){
     document.getElementById('unpaidDataSourceTag').textContent = 'Imported · ' + file.name;
     document.getElementById('unpaidDataSourceTag').classList.add('imported');
     unpaidShowStatus(`Imported successfully — ${UNPAID_DATA.length} unpaid users. Billing Status shared Billing Import bata aauxa.`, 'ok');
-    renderUnpaid();
     fbSaveUnpaidData(file.name);
+    renderUnpaid();
   }catch(err){
     console.error(err);
     unpaidShowStatus('Import failed: ' + err.message, 'err');
@@ -2256,9 +2090,38 @@ document.getElementById('unpaidResetBtn').addEventListener('click', ()=>{
   document.getElementById('unpaidDataSourceTag').classList.remove('imported');
   unpaidShowStatus('Cleared.', 'info');
   document.getElementById('unpaidFileInput').value = '';
+  if(fbdb){
+    fbdb.ref('expiryTracker/unpaidData').remove().catch(err=> console.error('Unpaid clear-sync failed', err));
+  }
   renderUnpaid();
-  fbClearUnpaidData();
 });
+
+// ---------- Firebase sync: Unpaid Follow-up import data ----------
+function fbSaveUnpaidData(fileName){
+  if(!fbdb) return;
+  try{
+    fbdb.ref('expiryTracker/unpaidData').set({
+      data: UNPAID_DATA,
+      fileName: fileName || '',
+      updatedAt: Date.now(),
+      updatedBy: CURRENT_STAFF ? CURRENT_STAFF.id : null
+    }).catch(err=> console.error('Unpaid sync failed', err));
+  }catch(err){ console.error('Unpaid sync error', err); }
+}
+function fbLoadUnpaidData(){
+  if(!fbdb) return;
+  fbdb.ref('expiryTracker/unpaidData').once('value').then(snap=>{
+    const d = snap.val();
+    if(!d || !d.data) return;
+    UNPAID_DATA = d.data;
+    if(d.fileName){
+      document.getElementById('unpaidDataSourceTag').textContent = 'Imported · ' + d.fileName;
+      document.getElementById('unpaidDataSourceTag').classList.add('imported');
+    }
+    renderUnpaid();
+  }).catch(err=> console.error('Unpaid load failed', err));
+}
+fbLoadUnpaidData();
 
 function daysSince(dateStr){
   if(!dateStr) return null;
