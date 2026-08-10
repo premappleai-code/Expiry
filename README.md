@@ -117,6 +117,12 @@ body{
   color:var(--text-soft);
   margin-right:4px;
 }
+.filters{
+  display:flex;
+  gap:14px;
+  align-items:flex-end;
+  flex-wrap:wrap;
+}
 input[type=date], input[type=text], select{
   font-family:inherit;
   font-size:13px;
@@ -419,6 +425,7 @@ select.remarksInput{
     <button class="secondary" id="billingImportBtn">Billing Import</button>
     <input type="file" id="billingFileInput" accept=".xlsx,.xls,.csv">
     <button class="ghost" id="exportAllBtn">Export CSV</button>
+    <button class="secondary" id="refreshBtn" title="Firebase bata sabai data (billing, unpaid, YSD, high-risk, activity log) feri load garcha">🔄 Refresh</button>
     <span id="staffBadge" style="display:none;"></span>
   </div>
 </div>
@@ -611,7 +618,7 @@ select.remarksInput{
           <table>
             <thead><tr>
               <th>Username</th><th>OLT</th><th>Created</th><th>Expiry</th>
-              <th class="ysd-num">Fcst Revenue</th><th>Status</th>
+              <th class="ysd-num">Fcst Revenue</th><th>Status</th><th>Follow-up</th><th>Remarks</th>
             </tr></thead>
             <tbody id="ysdDetailTable"></tbody>
           </table>
@@ -691,6 +698,24 @@ select.remarksInput{
   <!-- ============ SUMMARY REPORTS TAB (entire combined report) ============ -->
   <div class="tabSection" id="tabSummary">
 
+    <div class="panel" id="briefSummaryWrap">
+      <div class="panel-head">
+        <h2>📋 Brief Overall Report — Sabai Section Combined</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Expiry + High Risk + Unpaid + Year Start Disable — ek najar ma sabai kura</span>
+      </div>
+      <div class="panel-body">
+        <div class="kpis" id="briefSummaryKpis"></div>
+        <div class="scrollx" style="margin-top:12px;">
+        <table>
+          <thead><tr>
+            <th>Section</th><th>Total Users</th><th>Followed-up</th><th>Billed / Renewed</th><th>Pending</th><th>Revenue at Stake (NPR)</th><th>Amount Recovered (NPR)</th>
+          </tr></thead>
+          <tbody id="briefSummaryTbody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
     <div class="panel">
       <div class="panel-head">
         <h2>Overview Snapshot</h2>
@@ -769,7 +794,27 @@ select.remarksInput{
         <h2>📊 Staff-wise Summary Report</h2>
         <span class="sub" style="font-size:11px;color:var(--text-soft);">Follow-ups, effort hours, ra collected billing staff anusar</span>
       </div>
-      <div class="panel-body" id="summaryPanel"></div>
+      <div class="panel-body">
+        <div class="filters" style="margin-bottom:12px;">
+          <div>
+            <label for="summaryCategoryFilter" style="font-size:11px;color:var(--text-soft);display:block;margin-bottom:3px;">Category</label>
+            <select id="summaryCategoryFilter"><option value="ALL">All Categories</option></select>
+          </div>
+          <div>
+            <label for="summaryDayFilter" style="font-size:11px;color:var(--text-soft);display:block;margin-bottom:3px;">Day</label>
+            <select id="summaryDayFilter"><option value="ALL">All Days</option></select>
+          </div>
+        </div>
+        <div id="summaryPanel"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="hourlyPanelWrap">
+      <div class="panel-head">
+        <h2>⏰ Hourly Follow-up Activity</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Din bhari kun ghanta ma kati follow-up bhayo — same Category/Day filter lागू huncha</span>
+      </div>
+      <div class="panel-body" id="hourlyPanel"></div>
     </div>
   </div>
 
@@ -801,6 +846,8 @@ select.remarksInput{
 
 <script>
 let STAFF_MINUTES_TODAY_ALL = {}; // id -> minutes (today, from Firebase) — declared early to avoid TDZ issues
+let YSD_FOLLOWUPS = {};           // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} — YSD tab
+let ACTIVITY_LOG = [];            // flat log of every follow-up action: {staff, name, username, followUp, remarks, kind, ts}
 let RAW = [];        // active dataset (array of row objects, normalized keys)
 let COLMETA = { hasPayment:false, paymentKey:null };
 let YSD_DATA = [];              // Year Start Disable dataset: {u, olt, cy, created, expiry, rev} — status computed live from BILLING_PAID
@@ -1191,7 +1238,7 @@ function exportCSV(rows, filename){
 // ---------- Firebase sync (follow-up + remarks) ----------
 function fbSaveFollowup(username, followUp, remarks, kind){
   if(!fbdb){ setSyncStatus('Offline mode (Firebase not loaded)', true); return; }
-  const basePath = (kind === 'highrisk') ? 'expiryTracker/highRiskFollowups' : (kind === 'unpaid') ? 'expiryTracker/unpaidFollowups' : FB_PATH;
+  const basePath = (kind === 'highrisk') ? 'expiryTracker/highRiskFollowups' : (kind === 'unpaid') ? 'expiryTracker/unpaidFollowups' : (kind === 'ysd') ? 'expiryTracker/ysdFollowups' : FB_PATH;
   try{
     const key = fbKey(username);
     fbdb.ref(basePath + '/' + key).set({
@@ -1640,54 +1687,102 @@ function renderConversion(){
   const rowUnpaid = row('Unpaid Follow-up', scopeUnpaid.length, unpaidFollowed,
     d=> isBilled(d.u), d=> (amtFor(d.u) || d.amt || 0));
 
-  tbody.innerHTML = rowExp + rowHR + rowUnpaid;
+  // 4) Year Start Disable
+  const scopeYSD = YSD_DATA.filter(d=> oltSel==='ALL' || d.olt===oltSel);
+  const ysdFollowed = scopeYSD.filter(d=> (YSD_FOLLOWUPS[normUser(d.u)]||{}).followUp);
+  const rowYSD = row('Year Start Disable', scopeYSD.length, ysdFollowed,
+    d=> isBilled(d.u), d=> (amtFor(d.u) || d.rev || 0));
+
+  tbody.innerHTML = rowExp + rowHR + rowUnpaid + rowYSD;
+}
+
+// ---------- Brief Overall Report (everything, one glance) ----------
+function renderBriefSummary(){
+  const kpiEl = document.getElementById('briefSummaryKpis');
+  const tbodyEl = document.getElementById('briefSummaryTbody');
+  if(!kpiEl || !tbodyEl) return;
+
+  function amtFor(username){
+    const key = normUser(username);
+    return BILLING_AMOUNT[key] != null ? BILLING_AMOUNT[key] : 0;
+  }
+  function sectionStats(total, followedList, isBilledFn, amtFn, revFn){
+    const followedUp = followedList.length;
+    const billed = followedList.filter(isBilledFn);
+    const billedCount = billed.length;
+    const pending = total - billedCount;
+    const revenueAtStake = total; // placeholder, replaced by caller with actual sum
+    const recovered = billed.reduce((s,x)=> s + amtFn(x), 0);
+    return { total, followedUp, billedCount, pending, recovered };
+  }
+
+  const expRows = RAW;
+  const expFollowed = expRows.filter(r=>r.followUp);
+  const expStats = sectionStats(expRows.length, expFollowed, r=>isBilled(r.username), r=>(amtFor(r.username)||r.revenue));
+  expStats.revenue = expRows.reduce((s,r)=> s + (r.revenue||0), 0);
+
+  const hrRows = window.__HIGH_RISK_DATA__ || [];
+  const hrFollowed = hrRows.filter(u=> (HR_FOLLOWUPS[normUser(u.Username)]||{}).followUp);
+  const hrStats = sectionStats(hrRows.length, hrFollowed, u=>isBilled(u.Username), u=>amtFor(u.Username));
+  hrStats.revenue = hrRows.reduce((s,u)=> s + (parseFloat(String(u.ForeRevenue||'').replace(/[^0-9.\-]/g,''))||0), 0);
+
+  const unpaidRows = UNPAID_DATA;
+  const unpaidFollowed = unpaidRows.filter(d=> (UNPAID_FOLLOWUPS[normUser(d.u)]||{}).followUp);
+  const unpaidStats = sectionStats(unpaidRows.length, unpaidFollowed, d=>isBilled(d.u), d=>(amtFor(d.u)||d.amt||0));
+  unpaidStats.revenue = unpaidRows.reduce((s,d)=> s + (d.amt||0), 0);
+
+  const ysdRows = YSD_DATA;
+  const ysdFollowed = ysdRows.filter(d=> (YSD_FOLLOWUPS[normUser(d.u)]||{}).followUp);
+  const ysdStats = sectionStats(ysdRows.length, ysdFollowed, d=>isBilled(d.u), d=>(amtFor(d.u)||d.rev||0));
+  ysdStats.revenue = ysdRows.reduce((s,d)=> s + (d.rev||0), 0);
+
+  const sections = [
+    ['Expiry Users', expStats],
+    ['High Risk Users', hrStats],
+    ['Unpaid Follow-up', unpaidStats],
+    ['Year Start Disable', ysdStats],
+  ];
+
+  tbodyEl.innerHTML = sections.map(([label, s])=>`
+    <tr>
+      <td><b>${label}</b></td>
+      <td>${fmtNum(s.total)}</td>
+      <td>${fmtNum(s.followedUp)}</td>
+      <td style="color:var(--green);font-weight:600">${fmtNum(s.billedCount)}</td>
+      <td style="color:var(--red);font-weight:600">${fmtNum(s.pending)}</td>
+      <td>${fmtNum(s.revenue)}</td>
+      <td>${fmtNum(s.recovered)}</td>
+    </tr>
+  `).join('');
+
+  const grandTotal = sections.reduce((s,[,x])=> s+x.total, 0);
+  const grandFollowed = sections.reduce((s,[,x])=> s+x.followedUp, 0);
+  const grandBilled = sections.reduce((s,[,x])=> s+x.billedCount, 0);
+  const grandRecovered = sections.reduce((s,[,x])=> s+x.recovered, 0);
+  const grandRevenue = sections.reduce((s,[,x])=> s+x.revenue, 0);
+  const convRate = grandFollowed ? ((grandBilled/grandFollowed)*100).toFixed(1)+'%' : '—';
+  const activeStaff = Object.keys(STAFF_MINUTES_TODAY_ALL).length;
+
+  kpiEl.innerHTML = `
+    <div class="kpi blue"><div class="val">${fmtNum(grandTotal)}</div><div class="lbl">Total Users (all sections)</div></div>
+    <div class="kpi amber"><div class="val">${fmtNum(grandFollowed)}</div><div class="lbl">Total Followed-up</div></div>
+    <div class="kpi green"><div class="val">${fmtNum(grandBilled)}</div><div class="lbl">Total Billed / Renewed</div></div>
+    <div class="kpi red"><div class="val">${convRate}</div><div class="lbl">Overall Conversion Rate</div></div>
+    <div class="kpi blue"><div class="val">${fmtNum(grandRevenue)}</div><div class="lbl">Total Revenue at Stake (NPR)</div></div>
+    <div class="kpi green"><div class="val">${fmtNum(grandRecovered)}</div><div class="lbl">Total Amount Recovered (NPR)</div></div>
+    <div class="kpi amber"><div class="val">${fmtNum(activeStaff)}</div><div class="lbl">Staff Active Today</div></div>
+  `;
 }
 
 function renderSummary(){
   renderBillingBySource();
   renderConversion();
+  renderBriefSummary();
   const wrap = document.getElementById('summaryPanel');
   if(!wrap) return;
-  const oltSel = document.getElementById('oltFilter') ? document.getElementById('oltFilter').value : 'ALL';
-  const hrOltByUser = {}; // normalized username -> OLT, from curated high-risk list
-  (window.__HIGH_RISK_DATA__ || []).forEach(u=>{ hrOltByUser[normUser(u.Username)] = u.OLT; });
-  const staffStats = {}; // id -> {name, followUps, categories:{}, collected:0}
-  function ensure(id, name){
-    if(!staffStats[id]) staffStats[id] = { name: name||id, followUps:0, categories:{}, collected:0 };
-    return staffStats[id];
-  }
-  // from main dataset
-  RAW.forEach(r=>{
-    if(oltSel!=='ALL' && r.olt!==oltSel) return;
-    if(r.followUp && r.followedUpBy){
-      const s = ensure(r.followedUpBy, r.followedUpByName);
-      s.followUps++;
-      const cat = r.remarks || 'Uncategorized';
-      s.categories[cat] = (s.categories[cat]||0) + 1;
-      if(BILLING_PAID.has(normUser(r.username))){
-        s.collected += (BILLING_AMOUNT[normUser(r.username)] != null ? BILLING_AMOUNT[normUser(r.username)] : r.revenue);
-      }
-    }
-  });
-  // from high-risk dataset
-  Object.values(HR_FOLLOWUPS).forEach(rec=>{
-    if(oltSel!=='ALL' && hrOltByUser[normUser(rec.username)]!==oltSel) return;
-    if(rec.followUp && rec.followedUpBy){
-      const s = ensure(rec.followedUpBy, rec.followedUpByName);
-      s.followUps++;
-      const cat = rec.remarks || 'Uncategorized';
-      s.categories[cat] = (s.categories[cat]||0) + 1;
-      if(BILLING_PAID.has(normUser(rec.username))){
-        s.collected += (BILLING_AMOUNT[normUser(rec.username)] || 0);
-      }
-    }
-  });
-  // effort hours from Firebase cache
-  Object.keys(STAFF_MINUTES_TODAY_ALL).forEach(id=>{
-    ensure(id, STAFF_CREDENTIALS[id] ? STAFF_CREDENTIALS[id].name : id);
-  });
 
   // ---- Overall follow-up status (always shown, regardless of per-staff data) ----
+  const oltSel = document.getElementById('oltFilter') ? document.getElementById('oltFilter').value : 'ALL';
   const scopeRows = RAW.filter(r=> oltSel==='ALL' || r.olt===oltSel);
   const totalExpiring = scopeRows.length;
   const totalFollowed = scopeRows.filter(r=>r.followUp).length;
@@ -1701,15 +1796,55 @@ function renderSummary(){
       <div class="kpi amber"><div class="val">${fmtNum(hrFollowed)}/${fmtNum(scopeHR.length)}</div><div class="lbl">High Risk Followed-up</div></div>
     </div>`;
 
+  // ---- Staff-wise table, driven by ACTIVITY_LOG + Category/Day filters ----
+  const catSel = document.getElementById('summaryCategoryFilter');
+  const daySel = document.getElementById('summaryDayFilter');
+  const catFilter = catSel ? catSel.value : 'ALL';
+  const dayFilter = daySel ? daySel.value : 'ALL';
+
+  function entryDay(ts){ const d = new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+  const filteredLog = ACTIVITY_LOG.filter(e=>{
+    if(!e.followUp) return false; // only count actual "marked done" actions
+    if(catFilter!=='ALL' && (e.remarks||'Uncategorized')!==catFilter) return false;
+    if(dayFilter!=='ALL' && entryDay(e.ts)!==dayFilter) return false;
+    return true;
+  });
+
+  const staffStats = {}; // id -> {name, followUps, categories:{}, users:Set, collected:0}
+  function ensure(id, name){
+    if(!staffStats[id]) staffStats[id] = { name: name||id, followUps:0, categories:{}, users:new Set(), collected:0 };
+    return staffStats[id];
+  }
+  filteredLog.forEach(e=>{
+    if(!e.staff) return;
+    const s = ensure(e.staff, e.name);
+    s.followUps++;
+    const cat = e.remarks || 'Uncategorized';
+    s.categories[cat] = (s.categories[cat]||0) + 1;
+    s.users.add(normUser(e.username));
+  });
+  // collected amount: dedupe per staff by unique username that is billed
+  Object.values(staffStats).forEach(s=>{
+    s.users.forEach(u=>{
+      if(BILLING_PAID.has(u)) s.collected += (BILLING_AMOUNT[u] != null ? BILLING_AMOUNT[u] : 0);
+    });
+  });
+  // make sure staff with logged-in time today still show up even with 0 follow-ups today
+  Object.keys(STAFF_MINUTES_TODAY_ALL).forEach(id=>{
+    ensure(id, STAFF_CREDENTIALS[id] ? STAFF_CREDENTIALS[id].name : id);
+  });
+
   const ids = Object.keys(staffStats);
   if(!ids.length){
-    wrap.innerHTML = statusHtml + `<div class="note">Halsam kunai staff le follow-up gareko chaina. Login garera follow-up marking start garnus.</div>`;
+    wrap.innerHTML = statusHtml + `<div class="note">Halsam kunai staff le follow-up gareko chaina (yo filter ma). Login garera follow-up marking start garnus, ya filter fereer herrnus.</div>`;
+    renderHourly(filteredLog);
     return;
   }
   let html = statusHtml + `<div class="scrollx"><table><thead><tr>
     <th>Staff</th><th>Total Follow-ups</th><th>Category breakdown</th><th>Effort (hrs, aaja)</th><th>Amount Collected (NPR)</th>
   </tr></thead><tbody>`;
-  ids.forEach(id=>{
+  ids.sort((a,b)=> staffStats[b].followUps - staffStats[a].followUps).forEach(id=>{
     const s = staffStats[id];
     const minutes = STAFF_MINUTES_TODAY_ALL[id] || 0;
     const hrs = (minutes/60).toFixed(1);
@@ -1724,7 +1859,75 @@ function renderSummary(){
   });
   html += '</tbody></table></div>';
   wrap.innerHTML = html;
+
+  renderHourly(filteredLog);
 }
+
+// ---------- Hourly Follow-up Activity ----------
+function renderHourly(filteredLog){
+  const el = document.getElementById('hourlyPanel');
+  if(!el) return;
+  const hourCounts = new Array(24).fill(0);
+  (filteredLog || []).forEach(e=>{
+    const h = new Date(e.ts).getHours();
+    hourCounts[h]++;
+  });
+  const maxC = Math.max(1, ...hourCounts);
+  const peakHour = hourCounts.indexOf(maxC);
+  const total = hourCounts.reduce((a,b)=>a+b,0);
+  if(!total){
+    el.innerHTML = `<div class="note">Yo filter ma kunai follow-up activity chaina.</div>`;
+    return;
+  }
+  let rows = '';
+  for(let h=0; h<24; h++){
+    const c = hourCounts[h];
+    if(!c) continue;
+    const label = (h===0?'12 AM': h<12?h+' AM': h===12?'12 PM': (h-12)+' PM');
+    const pct = (c/maxC*100).toFixed(0);
+    rows += `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">
+      <div style="width:56px;font-size:12px;color:var(--text-soft);">${label}</div>
+      <div style="flex:1;background:#F3F2F1;border-radius:4px;overflow:hidden;height:16px;">
+        <div style="width:${pct}%;background:${h===peakHour?'var(--red)':'var(--blue)'};height:100%;"></div>
+      </div>
+      <div style="width:34px;font-size:12px;text-align:right;">${c}</div>
+    </div>`;
+  }
+  el.innerHTML = `<div class="sub" style="font-size:11px;color:var(--text-soft);margin-bottom:8px;">Peak ghanta: <b>${peakHour===0?'12 AM':peakHour<12?peakHour+' AM':peakHour===12?'12 PM':(peakHour-12)+' PM'}</b> (${maxC} follow-up) — Total ${total} follow-up yo filter ma</div>${rows}`;
+}
+
+function populateSummaryFilters(){
+  const catSel = document.getElementById('summaryCategoryFilter');
+  const daySel = document.getElementById('summaryDayFilter');
+  if(catSel && catSel.options.length <= 1){
+    REMARK_OPTIONS.forEach(o=>{
+      const opt = document.createElement('option'); opt.value = o; opt.textContent = o;
+      catSel.appendChild(opt);
+    });
+    catSel.addEventListener('change', renderSummary);
+  }
+  if(daySel){
+    const days = [...new Set(ACTIVITY_LOG.map(e=>{ const d=new Date(e.ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }))].sort().reverse();
+    const existing = new Set([...daySel.options].map(o=>o.value));
+    days.forEach(d=>{
+      if(existing.has(d)) return;
+      const opt = document.createElement('option'); opt.value = d; opt.textContent = d;
+      daySel.appendChild(opt);
+    });
+    if(!daySel._wired){ daySel.addEventListener('change', renderSummary); daySel._wired = true; }
+  }
+}
+
+function fbLoadActivityLog(){
+  if(!fbdb) return;
+  fbdb.ref('expiryTracker/activityLog').limitToLast(5000).on('value', snap=>{
+    const data = snap.val() || {};
+    ACTIVITY_LOG = Object.values(data).filter(v=> v && v.ts);
+    populateSummaryFilters();
+    renderSummary();
+  });
+}
+fbLoadActivityLog();
 
 function fbLoadStaffTime(){
   if(!fbdb) return;
@@ -1879,6 +2082,7 @@ function renderYSDDetail(){
   const frag = document.createDocumentFragment();
   filtered.slice(0,500).forEach(d=>{
     const st = ysdStatus(d);
+    const rec = YSD_FOLLOWUPS[normUser(d.u)] || {};
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${billedUsernameHtml(d.u)}</td>
@@ -1887,16 +2091,57 @@ function renderYSDDetail(){
       <td>${d.expiry||'—'}</td>
       <td class="ysd-num">${d.rev? d.rev.toLocaleString('en-US',{maximumFractionDigits:0}) : '—'}</td>
       <td class="ysd-status-${st}">${st}</td>
+      <td><button class="followBtn ysdFollowBtn ${rec.followUp?'done':''}" data-uname="${d.u}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button></td>
+      <td>${rec.followUp ? remarksSelectHtml(d.u, rec.remarks) : ''}</td>
     `;
     frag.appendChild(tr);
   });
   tbody.appendChild(frag);
   if(filtered.length>500){
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="6" style="text-align:center;color:var(--text-soft);padding:10px;">…${filtered.length-500} more rows — narrow filters or export</td>`;
+    tr.innerHTML = `<td colspan="8" style="text-align:center;color:var(--text-soft);padding:10px;">…${filtered.length-500} more rows — narrow filters or export</td>`;
     tbody.appendChild(tr);
   }
 }
+document.getElementById('ysdDetailTable').addEventListener('click', (e)=>{
+  if(e.target.classList.contains('ysdFollowBtn')){
+    if(!CURRENT_STAFF){ alert('Pahile login garnus.'); return; }
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = YSD_FOLLOWUPS[key] || { username: uname, followUp:false, remarks:'' };
+    rec.followUp = !rec.followUp;
+    if(!rec.followUp){ rec.remarks=''; rec.followedUpBy=null; rec.followedUpByName=null; }
+    else { rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
+    YSD_FOLLOWUPS[key] = rec;
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'ysd');
+    renderYSDDetail();
+    renderSummary();
+  }
+});
+document.getElementById('ysdDetailTable').addEventListener('change', (e)=>{
+  if(e.target.classList.contains('remarksInput')){
+    if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = YSD_FOLLOWUPS[key] || { username: uname, followUp:true, remarks:'' };
+    rec.remarks = e.target.value;
+    rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name;
+    YSD_FOLLOWUPS[key] = rec;
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'ysd');
+    renderSummary();
+  }
+});
+function fbLoadYsdFollowups(){
+  if(!fbdb) return;
+  fbdb.ref('expiryTracker/ysdFollowups').once('value').then(snap=>{
+    const data = snap.val() || {};
+    YSD_FOLLOWUPS = {};
+    Object.values(data).forEach(v=>{ if(v && v.username) YSD_FOLLOWUPS[normUser(v.username)] = v; });
+    renderYSDDetail();
+    renderSummary();
+  }).catch(err=> console.error('YSD followups load failed', err));
+}
+fbLoadYsdFollowups();
 ['ysdSearchBox','ysdOltFilterLocal','ysdStatusFilter','ysdYearFilter'].forEach(id=>{
   const el = document.getElementById(id);
   el.addEventListener('input', renderYSDDetail);
@@ -2282,6 +2527,32 @@ document.getElementById('unpaidExportCsvBtn').addEventListener('click', ()=>{
 });
 
 renderUnpaid();
+
+// ---------- Manual Refresh button: re-pull one-time Firebase fetches + re-render ----------
+document.getElementById('refreshBtn').addEventListener('click', ()=>{
+  const btn = document.getElementById('refreshBtn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '🔄 Refreshing…';
+  Promise.resolve()
+    .then(()=>{
+      fbLoadAndMerge();      // main expiry followups
+      fbLoadBillingData();   // billing import
+      fbLoadYsdFollowups();  // YSD followups
+      fbLoadUnpaidData();    // unpaid import + followups
+    })
+    .finally(()=>{
+      setTimeout(()=>{
+        render();
+        renderHighRisk();
+        renderYSD();
+        renderUnpaid();
+        renderSummary();
+        btn.disabled = false;
+        btn.textContent = original;
+      }, 600); // small delay so Firebase fetches have a moment to land
+    });
+});
 </script>
 </body>
 </html>
