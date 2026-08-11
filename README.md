@@ -352,9 +352,9 @@ select.remarksInput{
 #tabYSD .ysd-status-Remaining, #tabUnpaid .ysd-status-Remaining{ color:var(--red); font-weight:600; }
 #tabYSD .ysd-bar-track, #tabUnpaid .ysd-bar-track{ background:#F3F2F1; border-radius:8px; height:8px; width:100%; overflow:hidden; }
 #tabYSD .ysd-bar-fill, #tabUnpaid .ysd-bar-fill{ height:100%; background:var(--blue); }
-#tabYSD .ysd-toolbar, #tabUnpaid .ysd-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
-#tabYSD .ysd-toolbar input, #tabYSD .ysd-toolbar select, #tabUnpaid .ysd-toolbar input, #tabUnpaid .ysd-toolbar select{ font-family:inherit; font-size:12.5px; padding:6px 10px; border:1px solid var(--border); border-radius:4px; background:#fff; }
-#tabYSD .ysd-toolbar input, #tabUnpaid .ysd-toolbar input{ flex:1; min-width:160px; }
+#tabYSD .ysd-toolbar, #tabUnpaid .ysd-toolbar, #tabHighRisk .ysd-toolbar, #tabExpiry .ysd-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+#tabYSD .ysd-toolbar input, #tabYSD .ysd-toolbar select, #tabUnpaid .ysd-toolbar input, #tabUnpaid .ysd-toolbar select, #tabHighRisk .ysd-toolbar input, #tabHighRisk .ysd-toolbar select, #tabExpiry .ysd-toolbar input, #tabExpiry .ysd-toolbar select{ font-family:inherit; font-size:12.5px; padding:6px 10px; border:1px solid var(--border); border-radius:4px; background:#fff; }
+#tabYSD .ysd-toolbar input, #tabUnpaid .ysd-toolbar input, #tabHighRisk .ysd-toolbar input, #tabExpiry .ysd-toolbar input{ flex:1; min-width:160px; }
 #tabYSD .ysd-table-scroll, #tabUnpaid .ysd-table-scroll{ max-height:420px; overflow-y:auto; border:1px solid var(--border); border-radius:4px; }
 #tabYSD .ysd-import-field, #tabUnpaid .ysd-import-field{ display:flex; flex-direction:column; gap:4px; }
 #tabYSD .ysd-import-field label, #tabUnpaid .ysd-import-field label{ font-size:11px; color:var(--text-soft); font-weight:600; }
@@ -484,12 +484,25 @@ select.remarksInput{
       <div class="panel-head">
         <h2>All Expiring Users</h2>
         <div style="display:flex;gap:8px;align-items:center;">
-          <input type="text" placeholder="Search username/plan..." class="searchBox" id="expiryListSearch" style="width:200px;">
           <span id="expiryListSub" class="sub" style="font-size:11px;color:var(--text-soft);"></span>
           <button class="ghost" id="expiryListExport">Export CSV</button>
         </div>
       </div>
       <div class="panel-body">
+        <div class="ysd-toolbar">
+          <input type="text" placeholder="Search username/plan..." id="expiryListSearch">
+          <select id="expiryOltFilter"><option value="">All OLTs</option></select>
+          <select id="expiryBillingFilter">
+            <option value="">All Billing Status</option>
+            <option value="Matched">Matched</option>
+            <option value="Remaining">Remaining</option>
+          </select>
+          <select id="expiryFollowupFilter">
+            <option value="">All Follow-up Status</option>
+            <option value="Followed">Followed-up</option>
+            <option value="Pending">Pending</option>
+          </select>
+        </div>
         <div class="scrollx">
         <table>
           <thead><tr>
@@ -510,10 +523,24 @@ select.remarksInput{
         <span class="sub" id="highRiskSub" style="font-size:11px;color:var(--text-soft);"></span>
       </div>
       <div class="panel-body">
+        <div class="ysd-toolbar">
+          <input type="text" id="hrSearchBox" placeholder="Search username...">
+          <select id="hrOltFilter"><option value="">All OLTs</option></select>
+          <select id="hrBillingFilter">
+            <option value="">All Billing Status</option>
+            <option value="Matched">Matched</option>
+            <option value="Remaining">Remaining</option>
+          </select>
+          <select id="hrFollowupFilter">
+            <option value="">All Follow-up Status</option>
+            <option value="Followed">Followed-up</option>
+            <option value="Pending">Pending</option>
+          </select>
+        </div>
         <div class="scrollx">
         <table>
           <thead><tr>
-            <th>Username</th><th>OLT</th><th>Risk Score</th><th>Type</th><th>Status</th><th>Fore. Revenue</th><th>Follow-up</th><th>Remarks</th>
+            <th>Username</th><th>OLT</th><th>Risk Score</th><th>Type</th><th>Billing</th><th>Fore. Revenue</th><th>Follow-up</th><th>Remarks</th>
           </tr></thead>
           <tbody id="highRiskBody"></tbody>
         </table>
@@ -797,6 +824,16 @@ select.remarksInput{
       <div class="panel-body">
         <div class="filters" style="margin-bottom:12px;">
           <div>
+            <label for="summarySourceFilter" style="font-size:11px;color:var(--text-soft);display:block;margin-bottom:3px;">Source</label>
+            <select id="summarySourceFilter">
+              <option value="ALL">All Sources</option>
+              <option value="main">Expiry Users</option>
+              <option value="highrisk">High Risk</option>
+              <option value="unpaid">Unpaid</option>
+              <option value="ysd">Year Start Disable</option>
+            </select>
+          </div>
+          <div>
             <label for="summaryCategoryFilter" style="font-size:11px;color:var(--text-soft);display:block;margin-bottom:3px;">Category</label>
             <select id="summaryCategoryFilter"><option value="ALL">All Categories</option></select>
           </div>
@@ -1076,12 +1113,35 @@ function render(){
 }
 
 // ---------- All Expiring Users flat list (Expiry Users tab) ----------
-let EXPIRY_LIST_ALL = []; // full filtered rows (from render()), before search box narrows it
+let EXPIRY_LIST_ALL = []; // full filtered rows (from render()), before local filters narrow it
 function renderExpiryList(rows){
   EXPIRY_LIST_ALL = rows;
+
+  // populate local OLT filter (preserve selection)
+  const oltFilterEl = document.getElementById('expiryOltFilter');
+  const prevOlt = oltFilterEl.value;
+  const olts = [...new Set(rows.map(r=>r.olt).filter(Boolean))].sort();
+  oltFilterEl.innerHTML = '<option value="">All OLTs</option>' + olts.map(o=>`<option value="${o}">${o}</option>`).join('');
+  if(olts.includes(prevOlt)) oltFilterEl.value = prevOlt;
+
   const q = (document.getElementById('expiryListSearch').value || '').toLowerCase();
-  const list = q ? rows.filter(r=> (r.username||'').toLowerCase().includes(q) || (r.plan||'').toLowerCase().includes(q)) : rows;
-  document.getElementById('expiryListSub').textContent = `${fmtNum(list.length)} user${list.length===1?'':'s'}`;
+  const oltF = document.getElementById('expiryOltFilter').value;
+  const billF = document.getElementById('expiryBillingFilter').value;
+  const fuF = document.getElementById('expiryFollowupFilter').value;
+  const list = rows.filter(r=>{
+    if(q && !((r.username||'').toLowerCase().includes(q) || (r.plan||'').toLowerCase().includes(q))) return false;
+    if(oltF && r.olt !== oltF) return false;
+    if(billF){
+      const st = isBilled(r.username) ? 'Matched' : 'Remaining';
+      if(st !== billF) return false;
+    }
+    if(fuF){
+      if(fuF==='Followed' && !r.followUp) return false;
+      if(fuF==='Pending' && r.followUp) return false;
+    }
+    return true;
+  });
+  document.getElementById('expiryListSub').textContent = `${fmtNum(list.length)} of ${fmtNum(rows.length)} user${rows.length===1?'':'s'}`;
   const body = document.getElementById('expiryListBody');
   body.innerHTML = list.map(r=>`
     <tr>
@@ -1098,6 +1158,9 @@ function renderExpiryList(rows){
   `).join('') || `<tr><td colspan="9" class="empty">No records</td></tr>`;
 }
 document.getElementById('expiryListSearch').addEventListener('input', ()=> renderExpiryList(EXPIRY_LIST_ALL));
+['expiryOltFilter','expiryBillingFilter','expiryFollowupFilter'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', ()=> renderExpiryList(EXPIRY_LIST_ALL));
+});
 document.getElementById('expiryListBody').addEventListener('click', (e)=>{
   if(e.target.classList.contains('expListFollowBtn')){
     if(!CURRENT_STAFF){ alert('Pahile login garnus.'); return; }
@@ -1535,22 +1598,55 @@ function fbLogSession(kind){
 window.addEventListener('beforeunload', ()=>{ if(CURRENT_STAFF) fbLogSession('close'); });
 
 // ---------- High-risk panel ----------
+function hrGetFiltered(){
+  const oltSel = document.getElementById('oltFilter') ? document.getElementById('oltFilter').value : 'ALL';
+  const base = (window.__HIGH_RISK_DATA__ || []).filter(u=> oltSel==='ALL' || u.OLT===oltSel);
+  const q = (document.getElementById('hrSearchBox').value || '').toLowerCase();
+  const oltF = document.getElementById('hrOltFilter').value;
+  const billF = document.getElementById('hrBillingFilter').value;
+  const fuF = document.getElementById('hrFollowupFilter').value;
+  return base.filter(u=>{
+    if(q && !u.Username.toLowerCase().includes(q)) return false;
+    if(oltF && u.OLT !== oltF) return false;
+    if(billF){
+      const st = isBilled(u.Username) ? 'Matched' : 'Remaining';
+      if(st !== billF) return false;
+    }
+    if(fuF){
+      const followed = !!(HR_FOLLOWUPS[normUser(u.Username)]||{}).followUp;
+      if(fuF==='Followed' && !followed) return false;
+      if(fuF==='Pending' && followed) return false;
+    }
+    return true;
+  });
+}
+
 function renderHighRisk(){
   const oltSel = document.getElementById('oltFilter') ? document.getElementById('oltFilter').value : 'ALL';
-  const data = (window.__HIGH_RISK_DATA__ || []).filter(u=> oltSel==='ALL' || u.OLT===oltSel);
-  const sorted = [...data].sort((a,b)=> parseFloat(b.RiskScore||0) - parseFloat(a.RiskScore||0));
-  document.getElementById('highRiskSub').textContent = `${sorted.length} habitual/high-risk users (curated list) — Filter: ${oltSel}`;
+
+  // populate local OLT filter options (preserve selection)
+  const hrOltFilterEl = document.getElementById('hrOltFilter');
+  const prevOlt = hrOltFilterEl.value;
+  const olts = [...new Set((window.__HIGH_RISK_DATA__||[]).map(u=>u.OLT).filter(Boolean))].sort();
+  hrOltFilterEl.innerHTML = '<option value="">All OLTs</option>' + olts.map(o=>`<option value="${o}">${o}</option>`).join('');
+  if(olts.includes(prevOlt)) hrOltFilterEl.value = prevOlt;
+
+  const filtered = hrGetFiltered();
+  const sorted = [...filtered].sort((a,b)=> parseFloat(b.RiskScore||0) - parseFloat(a.RiskScore||0));
+  const total = (window.__HIGH_RISK_DATA__||[]).filter(u=> oltSel==='ALL' || u.OLT===oltSel).length;
+  document.getElementById('highRiskSub').textContent = `${sorted.length} of ${total} habitual/high-risk users — Page Filter: ${oltSel}`;
   const tbody = document.getElementById('highRiskBody');
   function rowHtml(u){
     const rec = HR_FOLLOWUPS[normUser(u.Username)] || {};
     const scoreClass = parseFloat(u.RiskScore||0) >= 90 ? 'risk-hi' : 'risk-med';
+    const billSt = isBilled(u.Username) ? 'Matched' : 'Remaining';
     return `
       <tr>
         <td>${billedUsernameHtml(u.Username)}</td>
         <td>${u.OLT}</td>
         <td class="${scoreClass}">${u.RiskScore}</td>
         <td>${u.Type||''}</td>
-        <td>${u.Status||''}</td>
+        <td class="ysd-status-${billSt}">${billSt}</td>
         <td>${u.ForeRevenue||''}</td>
         <td><button class="followBtn hrFollowBtn ${rec.followUp?'done':''}" data-uname="${u.Username}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button></td>
         <td>${rec.followUp ? remarksSelectHtml(u.Username, rec.remarks) : ''}</td>
@@ -1617,6 +1713,12 @@ document.getElementById('highRiskBody').addEventListener('change', (e)=>{
     fbSaveFollowup(uname, rec.followUp, rec.remarks, 'highrisk');
     renderSummary();
   }
+});
+['hrSearchBox'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=> renderHighRisk());
+});
+['hrOltFilter','hrBillingFilter','hrFollowupFilter'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', ()=> renderHighRisk());
 });
 
 function remarksSelectHtml(uname, currentVal){
@@ -1796,9 +1898,11 @@ function renderSummary(){
       <div class="kpi amber"><div class="val">${fmtNum(hrFollowed)}/${fmtNum(scopeHR.length)}</div><div class="lbl">High Risk Followed-up</div></div>
     </div>`;
 
-  // ---- Staff-wise table, driven by ACTIVITY_LOG + Category/Day filters ----
+  // ---- Staff-wise table, driven by ACTIVITY_LOG + Source/Category/Day filters ----
+  const srcSel = document.getElementById('summarySourceFilter');
   const catSel = document.getElementById('summaryCategoryFilter');
   const daySel = document.getElementById('summaryDayFilter');
+  const srcFilter = srcSel ? srcSel.value : 'ALL';
   const catFilter = catSel ? catSel.value : 'ALL';
   const dayFilter = daySel ? daySel.value : 'ALL';
 
@@ -1806,14 +1910,18 @@ function renderSummary(){
 
   const filteredLog = ACTIVITY_LOG.filter(e=>{
     if(!e.followUp) return false; // only count actual "marked done" actions
+    if(srcFilter!=='ALL' && (e.kind||'main')!==srcFilter) return false;
     if(catFilter!=='ALL' && (e.remarks||'Uncategorized')!==catFilter) return false;
     if(dayFilter!=='ALL' && entryDay(e.ts)!==dayFilter) return false;
     return true;
   });
 
-  const staffStats = {}; // id -> {name, followUps, categories:{}, users:Set, collected:0}
+  const KIND_LABELS = { main: 'Expiry', highrisk: 'High Risk', unpaid: 'Unpaid', ysd: 'Year Start Disable' };
+  const KIND_COLORS = { main: '#118DFF', highrisk: '#D13438', unpaid: '#FFB900', ysd: '#107C10' };
+
+  const staffStats = {}; // id -> {name, followUps, categories:{}, sources:{}, users:Set, collected:0}
   function ensure(id, name){
-    if(!staffStats[id]) staffStats[id] = { name: name||id, followUps:0, categories:{}, users:new Set(), collected:0 };
+    if(!staffStats[id]) staffStats[id] = { name: name||id, followUps:0, categories:{}, sources:{}, users:new Set(), collected:0 };
     return staffStats[id];
   }
   filteredLog.forEach(e=>{
@@ -1822,6 +1930,8 @@ function renderSummary(){
     s.followUps++;
     const cat = e.remarks || 'Uncategorized';
     s.categories[cat] = (s.categories[cat]||0) + 1;
+    const src = KIND_LABELS[e.kind] || 'Expiry';
+    s.sources[src] = (s.sources[src]||0) + 1;
     s.users.add(normUser(e.username));
   });
   // collected amount: dedupe per staff by unique username that is billed
@@ -1842,16 +1952,22 @@ function renderSummary(){
     return;
   }
   let html = statusHtml + `<div class="scrollx"><table><thead><tr>
-    <th>Staff</th><th>Total Follow-ups</th><th>Category breakdown</th><th>Effort (hrs, aaja)</th><th>Amount Collected (NPR)</th>
+    <th>Staff</th><th>Total Follow-ups</th><th>Source Breakdown (Expiry / High Risk / Unpaid / YSD)</th><th>Category breakdown</th><th>Effort (hrs, aaja)</th><th>Amount Collected (NPR)</th>
   </tr></thead><tbody>`;
   ids.sort((a,b)=> staffStats[b].followUps - staffStats[a].followUps).forEach(id=>{
     const s = staffStats[id];
     const minutes = STAFF_MINUTES_TODAY_ALL[id] || 0;
     const hrs = (minutes/60).toFixed(1);
     const cats = Object.entries(s.categories).map(([k,v])=>`<span class="cat-pill">${k}: ${v}</span>`).join(' ') || '—';
+    const srcs = ['Expiry','High Risk','Unpaid','Year Start Disable'].map(k=>{
+      const v = s.sources[k] || 0;
+      if(!v) return '';
+      return `<span class="cat-pill" style="border-color:${KIND_COLORS[Object.keys(KIND_LABELS).find(kk=>KIND_LABELS[kk]===k)]};color:${KIND_COLORS[Object.keys(KIND_LABELS).find(kk=>KIND_LABELS[kk]===k)]};">${k}: ${v}</span>`;
+    }).join(' ') || '—';
     html += `<tr>
       <td><b>${s.name}</b></td>
       <td>${fmtNum(s.followUps)}</td>
+      <td>${srcs}</td>
       <td>${cats}</td>
       <td>${hrs} hr</td>
       <td>${fmtNum(s.collected)}</td>
@@ -1897,8 +2013,10 @@ function renderHourly(filteredLog){
 }
 
 function populateSummaryFilters(){
+  const srcSel = document.getElementById('summarySourceFilter');
   const catSel = document.getElementById('summaryCategoryFilter');
   const daySel = document.getElementById('summaryDayFilter');
+  if(srcSel && !srcSel._wired){ srcSel.addEventListener('change', renderSummary); srcSel._wired = true; }
   if(catSel && catSel.options.length <= 1){
     REMARK_OPTIONS.forEach(o=>{
       const opt = document.createElement('option'); opt.value = o; opt.textContent = o;
