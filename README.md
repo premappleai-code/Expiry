@@ -156,6 +156,7 @@ button.ghost{
 button:hover{ filter:brightness(0.95); }
 #fileInput{ display:none; }
 #billingFileInput{ display:none; }
+#sixgTaskFileInput{ display:none; }
 
 .wrap{ padding:20px 24px 60px; max-width:1400px; margin:0 auto; }
 
@@ -301,6 +302,7 @@ tr:hover td{ background:#FAFBFC; }
 
 /* ---- High risk panel ---- */
 .hr-badge{ background:#FDE7E9; color:var(--red); border:1px solid #F3B7BB; border-radius:10px; padding:1px 6px; font-size:10px; font-weight:700; margin-left:6px; }
+.sixg-badge{ background:#DFF6DD; color:var(--green); border:1px solid #9FE0A0; border-radius:10px; padding:1px 6px; font-size:10px; font-weight:700; margin-left:6px; }
 .risk-hi{ color:var(--red); font-weight:700; }
 .risk-med{ color:#C97A00; font-weight:700; }
 #highRiskPanel .panel-head{ background:#FFF4F4; }
@@ -424,6 +426,8 @@ select.remarksInput{
     <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
     <button class="secondary" id="billingImportBtn">Billing Import</button>
     <input type="file" id="billingFileInput" accept=".xlsx,.xls,.csv">
+    <button class="secondary" id="sixgTaskImportBtn">6G Task Import</button>
+    <input type="file" id="sixgTaskFileInput" accept=".xlsx,.xls,.csv">
     <button class="ghost" id="exportAllBtn">Export CSV</button>
     <button class="secondary" id="refreshBtn" title="Firebase bata sabai data (billing, unpaid, YSD, high-risk, activity log) feri load garcha">🔄 Refresh</button>
     <span id="staffBadge" style="display:none;"></span>
@@ -945,6 +949,8 @@ let BILLING_PAID = new Set();   // normalized usernames found in imported billin
 let BILLING_AMOUNT = {};        // normalized username -> paid amount (if billing file has an amount column)
 let BILLING_PACKAGE = {};       // normalized username -> new/current package name (if billing file has a package/plan column)
 let BILLING_ACTUAL_DIFF = {};   // normalized username -> "Actual Diff" value (if billing file has this column) — used for Winback detection
+let SIXG_TASK_USERS = new Set(); // normalized usernames from imported "6G Task Details" file — confirmed upgraded to 6G
+let SIXG_TASK_META = { fileName:'', count:0 };
 let BILLING_META = { fileName:'', count:0 };
 let HR_FOLLOWUPS = {};          // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} for High-Risk list
 let UNPAID_DATA = [];           // Unpaid Follow-up dataset: {u, olt, marketedBy, plan, created, amt} — status computed live from BILLING_PAID
@@ -961,6 +967,9 @@ function isUpgradedTo6G(username, originalPlan){
   if(!isNormalPlan(originalPlan)) return false; // wasn't on a normal (non-6G) plan to begin with
   const pkg = BILLING_PACKAGE[normUser(username)];
   return !!(pkg && /6g/i.test(pkg));
+}
+function is6GTaskUpgraded(username){
+  return SIXG_TASK_USERS.has(normUser(username));
 }
 function billedUsernameHtml(username){
   return isBilled(username)
@@ -1212,7 +1221,7 @@ function renderExpiryList(rows){
     <tr>
       <td>${billedUsernameHtml(r.username)}</td>
       <td>${r.olt}</td>
-      <td><button class="followBtn expListFollowBtn ${r.followUp?'done':''}" data-uname="${r.username}">${r.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${window.__HIGH_RISK_DATA__ && window.__HIGH_RISK_DATA__.some(h=>normUser(h.Username)===normUser(r.username)) ? '<span class="hr-badge">HIGH RISK</span>' : ''}</td>
+      <td><button class="followBtn expListFollowBtn ${r.followUp?'done':''}" data-uname="${r.username}">${r.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${window.__HIGH_RISK_DATA__ && window.__HIGH_RISK_DATA__.some(h=>normUser(h.Username)===normUser(r.username)) ? '<span class="hr-badge">HIGH RISK</span>' : ''}${is6GTaskUpgraded(r.username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
       <td>${r.followUp ? remarksSelectHtml(r.username, r.remarks) : ''}</td>
       <td>${r.expiry}</td>
       <td>${r.plan||''}</td>
@@ -1288,7 +1297,7 @@ function renderModalCust(list){
   custBody.innerHTML = list.map(r=>`
     <tr>
       <td>${billedUsernameHtml(r.username)}</td>
-      <td><button class="followBtn ${r.followUp?'done':''}" data-uname="${r.username}">${r.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${window.__HIGH_RISK_DATA__ && window.__HIGH_RISK_DATA__.some(h=>normUser(h.Username)===normUser(r.username)) ? '<span class="hr-badge">HIGH RISK</span>' : ''}</td>
+      <td><button class="followBtn ${r.followUp?'done':''}" data-uname="${r.username}">${r.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${window.__HIGH_RISK_DATA__ && window.__HIGH_RISK_DATA__.some(h=>normUser(h.Username)===normUser(r.username)) ? '<span class="hr-badge">HIGH RISK</span>' : ''}${is6GTaskUpgraded(r.username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
       <td>${r.followUp ? remarksSelectHtml(r.username, r.remarks) : ''}</td>
       <td>${r.expiry}</td>
       <td>${r.plan||''}</td>
@@ -1579,6 +1588,78 @@ function fbLoadBillingData(){
 }
 fbLoadBillingData();
 
+// ---------- 6G Task Import: users with a confirmed/solved "upgrade to 6G" ticket ----------
+document.getElementById('sixgTaskImportBtn').addEventListener('click', ()=> document.getElementById('sixgTaskFileInput').click());
+document.getElementById('sixgTaskFileInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    const data = new Uint8Array(ev.target.result);
+    const wb = XLSX.read(data, {type:'array', cellDates:true});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    let json = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    if(!json.length || !findKey(json[0], ['username'])){
+      const raw = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+      const headerRowIdx = raw.findIndex(row => row.some(c => String(c).toLowerCase().includes('username')));
+      if(headerRowIdx >= 0){
+        json = XLSX.utils.sheet_to_json(sheet, {range:headerRowIdx, defval:''});
+      }
+    }
+    if(!json.length){
+      alert('6G Task file ma USERNAME column vetiena.');
+      return;
+    }
+    const userKey = findKey(json[0], ['username']);
+    if(!userKey){
+      alert('6G Task file ma USERNAME column vetiena.');
+      return;
+    }
+    SIXG_TASK_USERS = new Set();
+    json.forEach(r=>{
+      const u = normUser(r[userKey]);
+      if(u) SIXG_TASK_USERS.add(u);
+    });
+    SIXG_TASK_META = { fileName:file.name, count:SIXG_TASK_USERS.size };
+    fbSaveSixgTaskData();
+    render();
+    renderHighRisk();
+    renderYSD();
+    renderUnpaid();
+    renderWinback();
+    renderSummary();
+    alert(`6G Task Import safal — ${SIXG_TASK_USERS.size} user match vayo. Follow-up list haru ma "6G UPGRADED" green badge dekhincha.`);
+  };
+  reader.readAsArrayBuffer(file);
+});
+function fbSaveSixgTaskData(){
+  if(!fbdb) return;
+  try{
+    fbdb.ref('expiryTracker/sixgTaskUsers').set({
+      users: Array.from(SIXG_TASK_USERS),
+      meta: SIXG_TASK_META,
+      updatedAt: Date.now(),
+      updatedBy: CURRENT_STAFF ? CURRENT_STAFF.id : null
+    }).catch(err=> console.error('6G Task sync failed', err));
+  }catch(err){ console.error('6G Task sync error', err); }
+}
+function fbLoadSixgTaskData(){
+  if(!fbdb) return;
+  fbdb.ref('expiryTracker/sixgTaskUsers').once('value').then(snap=>{
+    const d = snap.val();
+    if(!d) return;
+    SIXG_TASK_USERS = new Set(d.users || []);
+    SIXG_TASK_META = d.meta || { fileName:'', count:SIXG_TASK_USERS.size };
+    render();
+    renderHighRisk();
+    renderYSD();
+    renderUnpaid();
+    renderWinback();
+    renderSummary();
+  }).catch(err=> console.error('6G Task load failed', err));
+}
+fbLoadSixgTaskData();
+
 document.getElementById('exportAllBtn').addEventListener('click', ()=>{
   exportCSV(filteredRows(), 'expired_users_all.csv');
 });
@@ -1768,7 +1849,7 @@ function renderHighRisk(){
         <td>${u.Type||''}</td>
         <td class="ysd-status-${billSt}">${billSt}</td>
         <td>${u.ForeRevenue||''}</td>
-        <td><button class="followBtn hrFollowBtn ${rec.followUp?'done':''}" data-uname="${u.Username}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button></td>
+        <td><button class="followBtn hrFollowBtn ${rec.followUp?'done':''}" data-uname="${u.Username}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${is6GTaskUpgraded(u.Username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
         <td>${rec.followUp ? remarksSelectHtml(u.Username, rec.remarks) : ''}</td>
       </tr>`;
   }
@@ -2037,7 +2118,7 @@ function renderWinback(){
       <td>${x.diff}</td>
       <td>${x.pkg||'—'}</td>
       <td class="ysd-status-${billSt}">${billSt}</td>
-      <td><button class="followBtn winbackFollowBtn ${rec.followUp?'done':''}" data-uname="${x.u}">${rec.followUp?'✓ Followed up':'Mark follow-up'}</button></td>
+      <td><button class="followBtn winbackFollowBtn ${rec.followUp?'done':''}" data-uname="${x.u}">${rec.followUp?'✓ Followed up':'Mark follow-up'}</button>${is6GTaskUpgraded(x.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
       <td>${rec.followUp ? remarksSelectHtml(x.u, rec.remarks) : ''}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="6" class="empty">Billing Import ma yo range (-30 dekhi -2000) ko "Actual Diff" bhako user vetiena</td></tr>`;
@@ -2474,7 +2555,7 @@ function renderYSDDetail(){
       <td>${d.expiry||'—'}</td>
       <td class="ysd-num">${d.rev? d.rev.toLocaleString('en-US',{maximumFractionDigits:0}) : '—'}</td>
       <td class="ysd-status-${st}">${st}</td>
-      <td><button class="followBtn ysdFollowBtn ${rec.followUp?'done':''}" data-uname="${d.u}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button></td>
+      <td><button class="followBtn ysdFollowBtn ${rec.followUp?'done':''}" data-uname="${d.u}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${is6GTaskUpgraded(d.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
       <td>${rec.followUp ? remarksSelectHtml(d.u, rec.remarks) : ''}</td>
     `;
     frag.appendChild(tr);
@@ -2845,7 +2926,7 @@ function renderUnpaidDetail(){
       <td class="ysd-num">${days===null?'—':days}</td>
       <td class="ysd-num">${d.amt ? d.amt.toLocaleString('en-IN',{maximumFractionDigits:0}) : '—'}</td>
       <td class="ysd-status-${st==='Matched'?'Matched':'Remaining'}">${st}</td>
-      <td><button class="followBtn unpaidFollowBtn ${rec.followUp?'done':''}" data-uname="${d.u}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button></td>
+      <td><button class="followBtn unpaidFollowBtn ${rec.followUp?'done':''}" data-uname="${d.u}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${is6GTaskUpgraded(d.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
       <td>${rec.followUp ? remarksSelectHtml(d.u, rec.remarks).replace('remarksInput', 'remarksInput unpaidRemarksInput') : ''}</td>
     `;
     frag.appendChild(tr);
@@ -2923,6 +3004,7 @@ document.getElementById('refreshBtn').addEventListener('click', ()=>{
       fbLoadBillingData();   // billing import
       fbLoadYsdFollowups();  // YSD followups
       fbLoadUnpaidData();    // unpaid import + followups
+      fbLoadSixgTaskData();  // 6G task import
     })
     .finally(()=>{
       setTimeout(()=>{
