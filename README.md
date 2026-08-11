@@ -816,6 +816,54 @@ select.remarksInput{
       </div>
     </div>
 
+    <div class="panel" id="winbackPanelWrap">
+      <div class="panel-head">
+        <h2>🎯 Winback Users (Billing Actual Diff -30 to -2000)</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Billing Import ko "Actual Diff" column bata detect huncha</span>
+      </div>
+      <div class="panel-body">
+        <div class="kpis" id="winbackKpis" style="margin-bottom:12px;"></div>
+        <div class="ysd-toolbar">
+          <input type="text" id="winbackSearchBox" placeholder="Search username...">
+          <select id="winbackFollowupFilter">
+            <option value="">All Follow-up Status</option>
+            <option value="Followed">Followed-up</option>
+            <option value="Pending">Pending</option>
+          </select>
+        </div>
+        <div class="scrollx">
+        <table>
+          <thead><tr>
+            <th>Username</th><th>Actual Diff</th><th>Package</th><th>Billing</th><th>Follow-up</th><th>Remarks</th>
+          </tr></thead>
+          <tbody id="winbackBody"></tbody>
+        </table>
+        </div>
+        <div class="scrollx" style="margin-top:14px;">
+          <table>
+            <thead><tr><th>Date</th><th>Winback Follow-ups Done</th><th>Converted (Paid)</th><th>Conversion Rate</th></tr></thead>
+            <tbody id="winbackDayTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="upgrade6gPanelWrap">
+      <div class="panel-head">
+        <h2>📶 6G Upgrade Report (Normal → 6G, Post Follow-up)</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Expiry Users tab ma follow-up gareko din, jasko original package 6G thiyena, tara Billing Import ma ab 6G package dekhincha</span>
+      </div>
+      <div class="panel-body">
+        <div class="kpis" id="upgrade6gKpis" style="margin-bottom:12px;"></div>
+        <div class="scrollx">
+          <table>
+            <thead><tr><th>Date</th><th>Follow-ups (Normal Package Users)</th><th>Upgraded to 6G</th><th>Upgrade Rate</th></tr></thead>
+            <tbody id="upgrade6gDayTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="panel" id="summaryPanelWrap">
       <div class="panel-head">
         <h2>📊 Staff-wise Summary Report</h2>
@@ -831,6 +879,7 @@ select.remarksInput{
               <option value="highrisk">High Risk</option>
               <option value="unpaid">Unpaid</option>
               <option value="ysd">Year Start Disable</option>
+              <option value="winback">Winback</option>
             </select>
           </div>
           <div>
@@ -884,6 +933,7 @@ select.remarksInput{
 <script>
 let STAFF_MINUTES_TODAY_ALL = {}; // id -> minutes (today, from Firebase) — declared early to avoid TDZ issues
 let YSD_FOLLOWUPS = {};           // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} — YSD tab
+let WINBACK_FOLLOWUPS = {};       // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} — Winback (Actual Diff -30 to -2000)
 let ACTIVITY_LOG = [];            // flat log of every follow-up action: {staff, name, username, followUp, remarks, kind, ts}
 let RAW = [];        // active dataset (array of row objects, normalized keys)
 let COLMETA = { hasPayment:false, paymentKey:null };
@@ -893,6 +943,8 @@ const YSD_OLT_ORDER = ['SKGD01','VMAD01','RISH01','DMLI','UNKNOWN'];
 const YSD_OLT_COLORS = {SKGD01:'#0078D4', VMAD01:'#107C10', RISH01:'#FFB900', DMLI:'#5C2D91', UNKNOWN:'#A19F9D'};
 let BILLING_PAID = new Set();   // normalized usernames found in imported billing data
 let BILLING_AMOUNT = {};        // normalized username -> paid amount (if billing file has an amount column)
+let BILLING_PACKAGE = {};       // normalized username -> new/current package name (if billing file has a package/plan column)
+let BILLING_ACTUAL_DIFF = {};   // normalized username -> "Actual Diff" value (if billing file has this column) — used for Winback detection
 let BILLING_META = { fileName:'', count:0 };
 let HR_FOLLOWUPS = {};          // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} for High-Risk list
 let UNPAID_DATA = [];           // Unpaid Follow-up dataset: {u, olt, marketedBy, plan, created, amt} — status computed live from BILLING_PAID
@@ -900,6 +952,16 @@ let UNPAID_FOLLOWUPS = {};      // normalized username -> {username, followUp, r
 
 function normUser(u){ return String(u||'').trim().toLowerCase(); }
 function isBilled(username){ return BILLING_PAID.has(normUser(username)); }
+function isWinback(username){
+  const d = BILLING_ACTUAL_DIFF[normUser(username)];
+  return d != null && d <= -30 && d >= -2000;
+}
+function isNormalPlan(planStr){ return planStr && !/6g/i.test(planStr); }
+function isUpgradedTo6G(username, originalPlan){
+  if(!isNormalPlan(originalPlan)) return false; // wasn't on a normal (non-6G) plan to begin with
+  const pkg = BILLING_PACKAGE[normUser(username)];
+  return !!(pkg && /6g/i.test(pkg));
+}
 function billedUsernameHtml(username){
   return isBilled(username)
     ? `<span class="paid-user">${username}</span><span class="paid-badge">BILLED</span>`
@@ -1301,7 +1363,7 @@ function exportCSV(rows, filename){
 // ---------- Firebase sync (follow-up + remarks) ----------
 function fbSaveFollowup(username, followUp, remarks, kind){
   if(!fbdb){ setSyncStatus('Offline mode (Firebase not loaded)', true); return; }
-  const basePath = (kind === 'highrisk') ? 'expiryTracker/highRiskFollowups' : (kind === 'unpaid') ? 'expiryTracker/unpaidFollowups' : (kind === 'ysd') ? 'expiryTracker/ysdFollowups' : FB_PATH;
+  const basePath = (kind === 'highrisk') ? 'expiryTracker/highRiskFollowups' : (kind === 'unpaid') ? 'expiryTracker/unpaidFollowups' : (kind === 'ysd') ? 'expiryTracker/ysdFollowups' : (kind === 'winback') ? 'expiryTracker/winbackFollowups' : FB_PATH;
   try{
     const key = fbKey(username);
     fbdb.ref(basePath + '/' + key).set({
@@ -1446,8 +1508,12 @@ document.getElementById('billingFileInput').addEventListener('change', (e)=>{
       return;
     }
     const amountKey = findKey(json[0], ['paid amount','amount paid','recharge amount','invoice amount','amount']);
+    const packageKey = findKey(json[0], ['package','plan','new package','current package','new plan']);
+    const diffKey = findKey(json[0], ['actual diff','actual gap','diff']);
     BILLING_PAID = new Set();
     BILLING_AMOUNT = {};
+    BILLING_PACKAGE = {};
+    BILLING_ACTUAL_DIFF = {};
     json.forEach(r=>{
       const u = normUser(r[userKey]);
       if(!u) return;
@@ -1455,6 +1521,11 @@ document.getElementById('billingFileInput').addEventListener('change', (e)=>{
       if(amountKey){
         const amt = parseFloat(String(r[amountKey]).replace(/[^0-9.\-]/g,''));
         if(!isNaN(amt)) BILLING_AMOUNT[u] = amt;
+      }
+      if(packageKey && r[packageKey]) BILLING_PACKAGE[u] = String(r[packageKey]).trim();
+      if(diffKey){
+        const diff = parseFloat(String(r[diffKey]).replace(/[^0-9.\-]/g,''));
+        if(!isNaN(diff)) BILLING_ACTUAL_DIFF[u] = diff;
       }
     });
     BILLING_META = { fileName:file.name, count:BILLING_PAID.size };
@@ -1464,6 +1535,7 @@ document.getElementById('billingFileInput').addEventListener('change', (e)=>{
     renderYSD();
     renderUnpaid();
     renderSummary();
+    renderWinback();
   };
   reader.readAsArrayBuffer(file);
 });
@@ -1476,6 +1548,8 @@ function fbSaveBillingData(){
     fbdb.ref('expiryTracker/billingData').set({
       paid: Array.from(BILLING_PAID),
       amounts: BILLING_AMOUNT,
+      packages: BILLING_PACKAGE,
+      actualDiff: BILLING_ACTUAL_DIFF,
       meta: BILLING_META,
       updatedAt: Date.now(),
       updatedBy: CURRENT_STAFF ? CURRENT_STAFF.id : null
@@ -1489,12 +1563,15 @@ function fbLoadBillingData(){
     if(!d) return;
     BILLING_PAID = new Set(d.paid || []);
     BILLING_AMOUNT = d.amounts || {};
+    BILLING_PACKAGE = d.packages || {};
+    BILLING_ACTUAL_DIFF = d.actualDiff || {};
     BILLING_META = d.meta || { fileName:'', count:BILLING_PAID.size };
     render();
     renderHighRisk();
     renderYSD();
     renderUnpaid();
     renderSummary();
+    renderWinback();
   }).catch(err=> console.error('Billing load failed', err));
 }
 fbLoadBillingData();
@@ -1876,10 +1953,155 @@ function renderBriefSummary(){
   `;
 }
 
+// ---------- Winback Users (Billing Actual Diff -30 to -2000) ----------
+function winbackGetList(){
+  return Object.keys(BILLING_ACTUAL_DIFF)
+    .filter(u => isWinback(u))
+    .map(u => ({ u, diff: BILLING_ACTUAL_DIFF[u], pkg: BILLING_PACKAGE[u] || '' }));
+}
+function renderWinback(){
+  const kpiEl = document.getElementById('winbackKpis');
+  const tbody = document.getElementById('winbackBody');
+  const dayTbody = document.getElementById('winbackDayTbody');
+  if(!kpiEl || !tbody || !dayTbody) return;
+
+  const list = winbackGetList();
+  const q = (document.getElementById('winbackSearchBox').value || '').toLowerCase();
+  const fuF = document.getElementById('winbackFollowupFilter').value;
+  const filtered = list.filter(x=>{
+    if(q && !x.u.includes(q)) return false;
+    if(fuF){
+      const followed = !!(WINBACK_FOLLOWUPS[x.u]||{}).followUp;
+      if(fuF==='Followed' && !followed) return false;
+      if(fuF==='Pending' && followed) return false;
+    }
+    return true;
+  });
+
+  const totalFollowed = list.filter(x=> (WINBACK_FOLLOWUPS[x.u]||{}).followUp).length;
+  const totalConverted = list.filter(x=> (WINBACK_FOLLOWUPS[x.u]||{}).followUp && BILLING_PAID.has(x.u)).length;
+  kpiEl.innerHTML = `
+    <div class="kpi blue"><div class="val">${fmtNum(list.length)}</div><div class="lbl">Total Winback Users</div></div>
+    <div class="kpi amber"><div class="val">${fmtNum(totalFollowed)}</div><div class="lbl">Followed-up</div></div>
+    <div class="kpi green"><div class="val">${fmtNum(totalConverted)}</div><div class="lbl">Converted (Paid)</div></div>
+  `;
+
+  tbody.innerHTML = filtered.map(x=>{
+    const rec = WINBACK_FOLLOWUPS[x.u] || {};
+    const billSt = BILLING_PAID.has(x.u) ? 'Matched' : 'Remaining';
+    return `<tr>
+      <td>${x.u}</td>
+      <td>${x.diff}</td>
+      <td>${x.pkg||'—'}</td>
+      <td class="ysd-status-${billSt}">${billSt}</td>
+      <td><button class="followBtn winbackFollowBtn ${rec.followUp?'done':''}" data-uname="${x.u}">${rec.followUp?'✓ Followed up':'Mark follow-up'}</button></td>
+      <td>${rec.followUp ? remarksSelectHtml(x.u, rec.remarks) : ''}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty">Billing Import ma yo range (-30 dekhi -2000) ko "Actual Diff" bhako user vetiena</td></tr>`;
+
+  // day-wise: from ACTIVITY_LOG, kind='winback', followUp true, grouped by day
+  const byDay = {};
+  ACTIVITY_LOG.filter(e=> e.kind==='winback' && e.followUp).forEach(e=>{
+    const d = new Date(e.ts);
+    const key = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(!byDay[key]) byDay[key] = { total:0, users:new Set() };
+    byDay[key].total++;
+    byDay[key].users.add(normUser(e.username));
+  });
+  const days = Object.keys(byDay).sort().reverse();
+  dayTbody.innerHTML = days.map(d=>{
+    const info = byDay[d];
+    const converted = [...info.users].filter(u=> BILLING_PAID.has(u)).length;
+    const rate = info.users.size ? ((converted/info.users.size)*100).toFixed(1)+'%' : '—';
+    return `<tr><td>${d}</td><td>${fmtNum(info.total)}</td><td style="color:var(--green);font-weight:600">${fmtNum(converted)}</td><td>${rate}</td></tr>`;
+  }).join('') || `<tr><td colspan="4" class="empty">Halsam kunai winback follow-up bhako chaina</td></tr>`;
+}
+document.getElementById('winbackBody').addEventListener('click', (e)=>{
+  if(e.target.classList.contains('winbackFollowBtn')){
+    if(!CURRENT_STAFF){ alert('Pahile login garnus.'); return; }
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = WINBACK_FOLLOWUPS[key] || { username: uname, followUp:false, remarks:'' };
+    rec.followUp = !rec.followUp;
+    if(!rec.followUp){ rec.remarks=''; rec.followedUpBy=null; rec.followedUpByName=null; }
+    else { rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
+    WINBACK_FOLLOWUPS[key] = rec;
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'winback');
+    renderWinback();
+    renderSummary();
+  }
+});
+document.getElementById('winbackBody').addEventListener('change', (e)=>{
+  if(e.target.classList.contains('remarksInput')){
+    if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = WINBACK_FOLLOWUPS[key] || { username: uname, followUp:true, remarks:'' };
+    rec.remarks = e.target.value;
+    rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name;
+    WINBACK_FOLLOWUPS[key] = rec;
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'winback');
+    renderSummary();
+  }
+});
+['winbackSearchBox'].forEach(id=> document.getElementById(id).addEventListener('input', renderWinback));
+['winbackFollowupFilter'].forEach(id=> document.getElementById(id).addEventListener('change', renderWinback));
+function fbLoadWinbackFollowups(){
+  if(!fbdb) return;
+  fbdb.ref('expiryTracker/winbackFollowups').once('value').then(snap=>{
+    const data = snap.val() || {};
+    WINBACK_FOLLOWUPS = {};
+    Object.values(data).forEach(v=>{ if(v && v.username) WINBACK_FOLLOWUPS[normUser(v.username)] = v; });
+    renderWinback();
+    renderSummary();
+  }).catch(err=> console.error('Winback followups load failed', err));
+}
+fbLoadWinbackFollowups();
+
+// ---------- 6G Upgrade Report (Normal -> 6G, post follow-up, day-wise) ----------
+function render6GUpgrade(){
+  const kpiEl = document.getElementById('upgrade6gKpis');
+  const dayTbody = document.getElementById('upgrade6gDayTbody');
+  if(!kpiEl || !dayTbody) return;
+
+  const rawByUser = {};
+  RAW.forEach(r=> rawByUser[normUser(r.username)] = r);
+
+  const byDay = {};
+  ACTIVITY_LOG.filter(e=> e.kind==='main' && e.followUp).forEach(e=>{
+    const key = normUser(e.username);
+    const r = rawByUser[key];
+    if(!r || !isNormalPlan(r.plan)) return; // only count users whose ORIGINAL plan was non-6G
+    const d = new Date(e.ts);
+    const dayKey = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(!byDay[dayKey]) byDay[dayKey] = { total:0, users:new Set() };
+    byDay[dayKey].total++;
+    byDay[dayKey].users.add(key);
+  });
+  const days = Object.keys(byDay).sort().reverse();
+  let grandFollowed = 0, grandUpgraded = 0;
+  dayTbody.innerHTML = days.map(d=>{
+    const info = byDay[d];
+    const upgraded = [...info.users].filter(u=> isUpgradedTo6G(u, (rawByUser[u]||{}).plan)).length;
+    grandFollowed += info.users.size; grandUpgraded += upgraded;
+    const rate = info.users.size ? ((upgraded/info.users.size)*100).toFixed(1)+'%' : '—';
+    return `<tr><td>${d}</td><td>${fmtNum(info.total)}</td><td style="color:var(--green);font-weight:600">${fmtNum(upgraded)}</td><td>${rate}</td></tr>`;
+  }).join('') || `<tr><td colspan="4" class="empty">Halsam kunai normal-package follow-up bhako chaina</td></tr>`;
+
+  const overallRate = grandFollowed ? ((grandUpgraded/grandFollowed)*100).toFixed(1)+'%' : '—';
+  kpiEl.innerHTML = `
+    <div class="kpi blue"><div class="val">${fmtNum(grandFollowed)}</div><div class="lbl">Normal-Package Users Followed-up</div></div>
+    <div class="kpi green"><div class="val">${fmtNum(grandUpgraded)}</div><div class="lbl">Upgraded to 6G</div></div>
+    <div class="kpi red"><div class="val">${overallRate}</div><div class="lbl">Upgrade Rate</div></div>
+  `;
+}
+
 function renderSummary(){
   renderBillingBySource();
   renderConversion();
   renderBriefSummary();
+  renderWinback();
+  render6GUpgrade();
   const wrap = document.getElementById('summaryPanel');
   if(!wrap) return;
 
@@ -1916,8 +2138,8 @@ function renderSummary(){
     return true;
   });
 
-  const KIND_LABELS = { main: 'Expiry', highrisk: 'High Risk', unpaid: 'Unpaid', ysd: 'Year Start Disable' };
-  const KIND_COLORS = { main: '#118DFF', highrisk: '#D13438', unpaid: '#FFB900', ysd: '#107C10' };
+  const KIND_LABELS = { main: 'Expiry', highrisk: 'High Risk', unpaid: 'Unpaid', ysd: 'Year Start Disable', winback: 'Winback' };
+  const KIND_COLORS = { main: '#118DFF', highrisk: '#D13438', unpaid: '#FFB900', ysd: '#107C10', winback: '#8764B8' };
 
   const staffStats = {}; // id -> {name, followUps, categories:{}, sources:{}, users:Set, collected:0}
   function ensure(id, name){
@@ -1959,7 +2181,7 @@ function renderSummary(){
     const minutes = STAFF_MINUTES_TODAY_ALL[id] || 0;
     const hrs = (minutes/60).toFixed(1);
     const cats = Object.entries(s.categories).map(([k,v])=>`<span class="cat-pill">${k}: ${v}</span>`).join(' ') || '—';
-    const srcs = ['Expiry','High Risk','Unpaid','Year Start Disable'].map(k=>{
+    const srcs = ['Expiry','High Risk','Unpaid','Year Start Disable','Winback'].map(k=>{
       const v = s.sources[k] || 0;
       if(!v) return '';
       return `<span class="cat-pill" style="border-color:${KIND_COLORS[Object.keys(KIND_LABELS).find(kk=>KIND_LABELS[kk]===k)]};color:${KIND_COLORS[Object.keys(KIND_LABELS).find(kk=>KIND_LABELS[kk]===k)]};">${k}: ${v}</span>`;
