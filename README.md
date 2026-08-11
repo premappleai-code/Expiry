@@ -981,11 +981,14 @@ function deriveOLT(username){
 
 // ---------- normalize a raw imported row into our schema ----------
 function findKey(row, patterns){
+  // IMPORTANT: patterns must be checked in priority order across ALL keys first
+  // (most-specific pattern wins), not key-by-key — otherwise a generic column like
+  // "DIFF" can shadow a more specific one like "ACTUAL DIFF" just because it appears
+  // earlier in the column order.
   const keys = Object.keys(row);
-  for(const k of keys){
-    const lk = k.toLowerCase();
-    for(const p of patterns){
-      if(lk.includes(p)) return k;
+  for(const p of patterns){
+    for(const k of keys){
+      if(k.toLowerCase().includes(p)) return k;
     }
   }
   return null;
@@ -1609,7 +1612,32 @@ function loadEmbedded(){
 loadEmbedded();
 renderHighRisk();
 
-// ---------- Staff login flow ----------
+// ---------- Staff login flow (persists 24 hours via localStorage — no re-login on refresh) ----------
+const SESSION_KEY = 'expiryTrackerSession';
+const SESSION_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function applyLogin(staffObj){
+  CURRENT_STAFF = staffObj;
+  SESSION_START = Date.now();
+  document.getElementById('loginOverlay').style.display = 'none';
+  const badge = document.getElementById('staffBadge');
+  badge.style.display = 'inline-flex';
+  badge.innerHTML = `👤 ${CURRENT_STAFF.name} <button id="logoutBtn">Logout</button>`;
+  document.getElementById('logoutBtn').addEventListener('click', doLogout);
+  startHeartbeat();
+  renderSummary();
+}
+
+function doLogout(){
+  stopHeartbeat();
+  CURRENT_STAFF = null;
+  try{ localStorage.removeItem(SESSION_KEY); }catch(err){ console.error('Session clear failed', err); }
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPass').value='';
+  document.getElementById('staffBadge').style.display = 'none';
+}
+
 function doLogin(){
   const idRaw = document.getElementById('loginUser').value.trim().toLowerCase();
   const pass = document.getElementById('loginPass').value;
@@ -1620,24 +1648,28 @@ function doLogin(){
     return;
   }
   errEl.textContent = '';
-  CURRENT_STAFF = { id: idRaw, name: rec.name, role: rec.role };
-  SESSION_START = Date.now();
-  document.getElementById('loginOverlay').style.display = 'none';
-  const badge = document.getElementById('staffBadge');
-  badge.style.display = 'inline-flex';
-  badge.innerHTML = `👤 ${CURRENT_STAFF.name} <button id="logoutBtn">Logout</button>`;
-  document.getElementById('logoutBtn').addEventListener('click', ()=>{
-    stopHeartbeat();
-    CURRENT_STAFF = null;
-    document.getElementById('loginOverlay').style.display = 'flex';
-    document.getElementById('loginUser').value='';
-    document.getElementById('loginPass').value='';
-    badge.style.display = 'none';
-  });
-  startHeartbeat();
+  const staffObj = { id: idRaw, name: rec.name, role: rec.role };
+  try{
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ staff: staffObj, expiresAt: Date.now() + SESSION_DURATION_MS }));
+  }catch(err){ console.error('Session save failed', err); }
+  applyLogin(staffObj);
   fbLogSession('login');
-  renderSummary();
 }
+
+// on page load: try to restore an unexpired session (skips the login screen for 24 hours)
+(function tryRestoreSession(){
+  try{
+    const raw = localStorage.getItem(SESSION_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(parsed && parsed.staff && parsed.expiresAt > Date.now()){
+      applyLogin(parsed.staff);
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  }catch(err){ console.error('Session restore failed', err); }
+})();
+
 document.getElementById('loginBtn').addEventListener('click', doLogin);
 document.getElementById('loginPass').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('loginUser').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
@@ -1658,6 +1690,17 @@ function startHeartbeat(){
       c.lastActive = Date.now();
       return c;
     });
+    // extend the 24-hour local session while actively working, so an active shift doesn't get logged out mid-way
+    try{
+      const raw = localStorage.getItem(SESSION_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(parsed && parsed.staff){
+          parsed.expiresAt = Date.now() + SESSION_DURATION_MS;
+          localStorage.setItem(SESSION_KEY, JSON.stringify(parsed));
+        }
+      }
+    }catch(err){ console.error('Session extend failed', err); }
   }, 60000); // 1 heartbeat per minute of active foreground time
 }
 function stopHeartbeat(){
