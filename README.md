@@ -544,7 +544,7 @@ select.remarksInput{
         <div class="scrollx">
         <table>
           <thead><tr>
-            <th>Username</th><th>OLT</th><th>Risk Score</th><th>Type</th><th>Billing</th><th>Fore. Revenue</th><th>Follow-up</th><th>Remarks</th>
+            <th>Username</th><th>OLT</th><th>Risk Score</th><th>Type</th><th>Billing</th><th>Fore. Revenue</th><th>Billed Amount</th><th>Max Days</th><th>Follow-up</th><th>Remarks</th>
           </tr></thead>
           <tbody id="highRiskBody"></tbody>
         </table>
@@ -747,6 +747,23 @@ select.remarksInput{
       </div>
     </div>
 
+    <div class="panel" id="dayWiseSummaryWrap">
+      <div class="panel-head">
+        <h2>📅 Day-wise Follow-up Summary (All Sections Combined)</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Source/Category filter (tala) le yesलाई pani affect garcha — Day filter le yo table लाई affect gardaina, kina ki yo nai sabai din ko breakdown ho</span>
+      </div>
+      <div class="panel-body">
+        <div class="scrollx">
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Total Follow-ups</th><th>Source Breakdown</th><th>Converted (Paid)</th><th>Conversion Rate</th><th>Amount Recovered (NPR)</th>
+          </tr></thead>
+          <tbody id="dayWiseSummaryTbody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
     <div class="panel">
       <div class="panel-head">
         <h2>Overview Snapshot</h2>
@@ -899,6 +916,14 @@ select.remarksInput{
       </div>
     </div>
 
+    <div class="panel" id="staffConversionPanelWrap">
+      <div class="panel-head">
+        <h2>🏆 Staff-wise Winback &amp; 6G Upgrade Conversion</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Winback = follow-up gareko user paxi bill vayo (Actual Diff -30 dekhi -2000). 6G Upgrade = follow-up gareko user 6G Task file sanga match vayo. Mathi ko Source/Category/Day filter yaha pani lागू huncha.</span>
+      </div>
+      <div class="panel-body" id="staffConversionPanel"></div>
+    </div>
+
     <div class="panel" id="hourlyPanelWrap">
       <div class="panel-head">
         <h2>⏰ Hourly Follow-up Activity</h2>
@@ -936,6 +961,7 @@ select.remarksInput{
 
 <script>
 let STAFF_MINUTES_TODAY_ALL = {}; // id -> minutes (today, from Firebase) — declared early to avoid TDZ issues
+let HEARTBEAT_TIMER = null;       // heartbeat interval handle — declared early to avoid TDZ issues (used by tryRestoreSession on load)
 let YSD_FOLLOWUPS = {};           // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} — YSD tab
 let WINBACK_FOLLOWUPS = {};       // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} — Winback (Actual Diff -30 to -2000)
 let ACTIVITY_LOG = [];            // flat log of every follow-up action: {staff, name, username, followUp, remarks, kind, ts}
@@ -949,6 +975,7 @@ let BILLING_PAID = new Set();   // normalized usernames found in imported billin
 let BILLING_AMOUNT = {};        // normalized username -> paid amount (if billing file has an amount column)
 let BILLING_PACKAGE = {};       // normalized username -> new/current package name (if billing file has a package/plan column)
 let BILLING_ACTUAL_DIFF = {};   // normalized username -> "Actual Diff" value (if billing file has this column) — used for Winback detection
+let BILLING_MAXDAYS = {};       // normalized username -> "Max Days" value (if billing file has this column)
 let SIXG_TASK_USERS = new Set(); // normalized usernames from imported "6G Task Details" file — confirmed upgraded to 6G
 let SIXG_TASK_META = { fileName:'', count:0 };
 let BILLING_META = { fileName:'', count:0 };
@@ -964,12 +991,18 @@ function isWinback(username){
 }
 function isNormalPlan(planStr){ return planStr && !/6g/i.test(planStr); }
 function isUpgradedTo6G(username, originalPlan){
+  // Primary signal: confirmed via 6G Task Details import (solved ticket = real upgrade)
+  if(is6GTaskUpgraded(username)) return true;
+  // Fallback signal: billing package text contains "6G" and original plan didn't
   if(!isNormalPlan(originalPlan)) return false; // wasn't on a normal (non-6G) plan to begin with
   const pkg = BILLING_PACKAGE[normUser(username)];
   return !!(pkg && /6g/i.test(pkg));
 }
 function is6GTaskUpgraded(username){
   return SIXG_TASK_USERS.has(normUser(username));
+}
+function isWinbackConverted(username){
+  return isWinback(username) && isBilled(username);
 }
 function billedUsernameHtml(username){
   return isBilled(username)
@@ -1102,7 +1135,8 @@ function render(){
   const billingNote = document.getElementById('billingNote');
   billingNote.style.display = 'block';
   if(BILLING_PAID.size){
-    billingNote.textContent = `Billing data loaded: ${BILLING_META.fileName} · ${fmtNum(BILLING_META.count)} unique users. "Payment Done" upar tyahi bata calculate bhako ho.`;
+    const amtTxt = BILLING_META.hasAmount ? ` · Total Amount: NPR ${fmtNum(BILLING_META.totalAmount||0)}` : ' · (Amount column vetiena)';
+    billingNote.textContent = `Billing data loaded: ${BILLING_META.fileName} · ${fmtNum(BILLING_META.count)} unique users${amtTxt}. "Payment Done" upar tyahi bata calculate bhako ho.`;
   } else {
     billingNote.textContent = 'Billing data import gareko xaina — "Billing Import" button bata renewal/payment file (jasto USERNAME + RECENT INVOICE RENEW DATE column bhayeko) upload garepachi "Payment Done" count dekhincha.';
   }
@@ -1522,25 +1556,32 @@ document.getElementById('billingFileInput').addEventListener('change', (e)=>{
     const amountKey = findKey(json[0], ['paid amount','amount paid','recharge amount','invoice amount','amount']);
     const packageKey = findKey(json[0], ['package','plan','new package','current package','new plan']);
     const diffKey = findKey(json[0], ['actual diff','actual gap','diff']);
+    const maxDaysKey = findKey(json[0], ['max days','maxdays']);
     BILLING_PAID = new Set();
     BILLING_AMOUNT = {};
     BILLING_PACKAGE = {};
     BILLING_ACTUAL_DIFF = {};
+    BILLING_MAXDAYS = {};
+    let totalAmount = 0;
     json.forEach(r=>{
       const u = normUser(r[userKey]);
       if(!u) return;
       BILLING_PAID.add(u);
       if(amountKey){
         const amt = parseFloat(String(r[amountKey]).replace(/[^0-9.\-]/g,''));
-        if(!isNaN(amt)) BILLING_AMOUNT[u] = amt;
+        if(!isNaN(amt)){ BILLING_AMOUNT[u] = amt; totalAmount += amt; }
       }
       if(packageKey && r[packageKey]) BILLING_PACKAGE[u] = String(r[packageKey]).trim();
       if(diffKey){
         const diff = parseFloat(String(r[diffKey]).replace(/[^0-9.\-]/g,''));
         if(!isNaN(diff)) BILLING_ACTUAL_DIFF[u] = diff;
       }
+      if(maxDaysKey){
+        const md = parseFloat(String(r[maxDaysKey]).replace(/[^0-9.\-]/g,''));
+        if(!isNaN(md)) BILLING_MAXDAYS[u] = md;
+      }
     });
-    BILLING_META = { fileName:file.name, count:BILLING_PAID.size };
+    BILLING_META = { fileName:file.name, count:BILLING_PAID.size, totalAmount, hasAmount: !!amountKey, hasMaxDays: !!maxDaysKey };
     fbSaveBillingData();
     render();
     renderHighRisk();
@@ -1562,6 +1603,7 @@ function fbSaveBillingData(){
       amounts: BILLING_AMOUNT,
       packages: BILLING_PACKAGE,
       actualDiff: BILLING_ACTUAL_DIFF,
+      maxDays: BILLING_MAXDAYS,
       meta: BILLING_META,
       updatedAt: Date.now(),
       updatedBy: CURRENT_STAFF ? CURRENT_STAFF.id : null
@@ -1577,6 +1619,7 @@ function fbLoadBillingData(){
     BILLING_AMOUNT = d.amounts || {};
     BILLING_PACKAGE = d.packages || {};
     BILLING_ACTUAL_DIFF = d.actualDiff || {};
+    BILLING_MAXDAYS = d.maxDays || {};
     BILLING_META = d.meta || { fileName:'', count:BILLING_PAID.size };
     render();
     renderHighRisk();
@@ -1756,7 +1799,6 @@ document.getElementById('loginPass').addEventListener('keydown', (e)=>{ if(e.key
 document.getElementById('loginUser').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
 
 // ---------- Time / effort tracking ----------
-let HEARTBEAT_TIMER = null;
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function startHeartbeat(){
   if(HEARTBEAT_TIMER) return;
@@ -1841,6 +1883,9 @@ function renderHighRisk(){
     const rec = HR_FOLLOWUPS[normUser(u.Username)] || {};
     const scoreClass = parseFloat(u.RiskScore||0) >= 90 ? 'risk-hi' : 'risk-med';
     const billSt = isBilled(u.Username) ? 'Matched' : 'Remaining';
+    const key = normUser(u.Username);
+    const billedAmt = BILLING_AMOUNT[key] != null ? fmtNum(BILLING_AMOUNT[key]) : '—';
+    const maxDays = BILLING_MAXDAYS[key] != null ? fmtNum(BILLING_MAXDAYS[key]) : '—';
     return `
       <tr>
         <td>${billedUsernameHtml(u.Username)}</td>
@@ -1849,6 +1894,8 @@ function renderHighRisk(){
         <td>${u.Type||''}</td>
         <td class="ysd-status-${billSt}">${billSt}</td>
         <td>${u.ForeRevenue||''}</td>
+        <td>${billedAmt}</td>
+        <td>${maxDays}</td>
         <td><button class="followBtn hrFollowBtn ${rec.followUp?'done':''}" data-uname="${u.Username}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${is6GTaskUpgraded(u.Username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
         <td>${rec.followUp ? remarksSelectHtml(u.Username, rec.remarks) : ''}</td>
       </tr>`;
@@ -2262,8 +2309,86 @@ function renderSummary(){
     return true;
   });
 
+  // ---- Staff-wise Winback & 6G Upgrade Conversion (respects Source/Category/Day filters) ----
+  const scPanel = document.getElementById('staffConversionPanel');
+  if(scPanel){
+    const staffUsers = {}; // staffId -> {name, users:Set}
+    filteredLog.forEach(e=>{
+      if(!e.staff) return;
+      if(!staffUsers[e.staff]) staffUsers[e.staff] = { name: e.name || (STAFF_CREDENTIALS[e.staff]?STAFF_CREDENTIALS[e.staff].name:e.staff), users: new Set() };
+      staffUsers[e.staff].users.add(normUser(e.username));
+    });
+    const rawByUserSC = {}; RAW.forEach(r=> rawByUserSC[normUser(r.username)] = r);
+    const scIds = Object.keys(staffUsers).sort((a,b)=> staffUsers[b].users.size - staffUsers[a].users.size);
+    if(!scIds.length){
+      scPanel.innerHTML = `<div class="note">Yo filter ma kunai follow-up activity chaina.</div>`;
+    } else {
+      let scHtml = `<div class="scrollx"><table><thead><tr>
+        <th>Staff</th><th>Follow-ups (unique users)</th><th>Winback Conversions</th><th>Winback Rate</th><th>6G Upgrade Conversions</th><th>6G Upgrade Rate</th>
+      </tr></thead><tbody>`;
+      scIds.forEach(id=>{
+        const info = staffUsers[id];
+        const usersArr = [...info.users];
+        const winbackConv = usersArr.filter(u=> isWinbackConverted(u));
+        const upgradeConv = usersArr.filter(u=> isUpgradedTo6G(u, (rawByUserSC[u]||{}).plan));
+        const wRate = usersArr.length ? ((winbackConv.length/usersArr.length)*100).toFixed(1)+'%' : '—';
+        const uRate = usersArr.length ? ((upgradeConv.length/usersArr.length)*100).toFixed(1)+'%' : '—';
+        scHtml += `<tr>
+          <td><b>${info.name}</b></td>
+          <td>${fmtNum(usersArr.length)}</td>
+          <td style="color:var(--green);font-weight:600">${fmtNum(winbackConv.length)}</td>
+          <td>${wRate}</td>
+          <td style="color:var(--green);font-weight:600">${fmtNum(upgradeConv.length)}</td>
+          <td>${uRate}</td>
+        </tr>`;
+      });
+      scHtml += '</tbody></table></div>';
+      scPanel.innerHTML = scHtml;
+    }
+  }
+
   const KIND_LABELS = { main: 'Expiry', highrisk: 'High Risk', unpaid: 'Unpaid', ysd: 'Year Start Disable', winback: 'Winback' };
   const KIND_COLORS = { main: '#118DFF', highrisk: '#D13438', unpaid: '#FFB900', ysd: '#107C10', winback: '#8764B8' };
+
+  // ---- Day-wise Follow-up Summary (all sections combined) — respects Source/Category, ignores Day filter ----
+  const logForDayWise = ACTIVITY_LOG.filter(e=>{
+    if(!e.followUp) return false;
+    if(srcFilter!=='ALL' && (e.kind||'main')!==srcFilter) return false;
+    if(catFilter!=='ALL' && (e.remarks||'Uncategorized')!==catFilter) return false;
+    return true;
+  });
+  const dayGroups = {};
+  logForDayWise.forEach(e=>{
+    const dk = entryDay(e.ts);
+    if(!dayGroups[dk]) dayGroups[dk] = { total:0, bySrc:{}, users:new Set() };
+    dayGroups[dk].total++;
+    const src = KIND_LABELS[e.kind] || 'Expiry';
+    dayGroups[dk].bySrc[src] = (dayGroups[dk].bySrc[src]||0) + 1;
+    dayGroups[dk].users.add(normUser(e.username));
+  });
+  const dayWiseTbody = document.getElementById('dayWiseSummaryTbody');
+  if(dayWiseTbody){
+    const dayKeys = Object.keys(dayGroups).sort().reverse();
+    dayWiseTbody.innerHTML = dayKeys.map(dk=>{
+      const info = dayGroups[dk];
+      const usersArr = [...info.users];
+      const converted = usersArr.filter(u=> BILLING_PAID.has(u));
+      const rate = usersArr.length ? ((converted.length/usersArr.length)*100).toFixed(1)+'%' : '—';
+      const amtRecovered = converted.reduce((s,u)=> s + (BILLING_AMOUNT[u]||0), 0);
+      const srcPills = Object.entries(info.bySrc).map(([k,v])=>{
+        const kindKey = Object.keys(KIND_LABELS).find(kk=>KIND_LABELS[kk]===k);
+        return `<span class="cat-pill" style="border-color:${KIND_COLORS[kindKey]};color:${KIND_COLORS[kindKey]};">${k}: ${v}</span>`;
+      }).join(' ');
+      return `<tr>
+        <td><b>${dk}</b></td>
+        <td>${fmtNum(info.total)}</td>
+        <td>${srcPills}</td>
+        <td style="color:var(--green);font-weight:600">${fmtNum(converted.length)}</td>
+        <td>${rate}</td>
+        <td>${fmtNum(amtRecovered)}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="6" class="empty">Yo filter ma kunai follow-up activity chaina</td></tr>`;
+  }
 
   const staffStats = {}; // id -> {name, followUps, categories:{}, sources:{}, users:Set, collected:0}
   function ensure(id, name){
