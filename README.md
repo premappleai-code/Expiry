@@ -253,6 +253,19 @@ tr:hover td{ background:#FAFBFC; }
   color:var(--green);
   border-color:#B3E6B3;
 }
+.reFollowBtn{
+  font-size:11px;
+  padding:4px 10px;
+  border-radius:12px;
+  border:1px solid #C7B8F5;
+  background:#F3EEFE;
+  color:#8764B8;
+  font-weight:600;
+  cursor:pointer;
+  white-space:nowrap;
+  margin-left:4px;
+}
+.reFollowBtn:hover{ border-color:#8764B8; background:#EAE0FB; }
 .remarksInput{
   font-size:12px;
   padding:5px 8px;
@@ -1255,8 +1268,8 @@ function renderExpiryList(rows){
     <tr>
       <td>${billedUsernameHtml(r.username)}</td>
       <td>${r.olt}</td>
-      <td><button class="followBtn expListFollowBtn ${r.followUp?'done':''}" data-uname="${r.username}">${r.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${window.__HIGH_RISK_DATA__ && window.__HIGH_RISK_DATA__.some(h=>normUser(h.Username)===normUser(r.username)) ? '<span class="hr-badge">HIGH RISK</span>' : ''}${is6GTaskUpgraded(r.username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
-      <td>${r.followUp ? remarksSelectHtml(r.username, r.remarks) : ''}</td>
+      <td>${followCellHtml('expListFollowBtn', r.username, r, (window.__HIGH_RISK_DATA__ && window.__HIGH_RISK_DATA__.some(h=>normUser(h.Username)===normUser(r.username)) ? '<span class="hr-badge">HIGH RISK</span>' : '') + (is6GTaskUpgraded(r.username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''))}</td>
+      <td>${r.followUp ? remarksCellHtml(r.username, r) : ''}</td>
       <td>${r.expiry}</td>
       <td>${r.plan||''}</td>
       <td>${r.bandwidth||''}</td>
@@ -1276,16 +1289,24 @@ document.getElementById('expiryListBody').addEventListener('click', (e)=>{
     const rowObj = RAW.find(rr=>rr.username===uname);
     if(rowObj){
       rowObj.followUp = !rowObj.followUp;
-      if(!rowObj.followUp){ rowObj.remarks = ''; rowObj.followedUpBy=null; rowObj.followedUpByName=null; }
-      else { rowObj.followedUpBy = CURRENT_STAFF.id; rowObj.followedUpByName = CURRENT_STAFF.name; }
+      if(!rowObj.followUp){ rowObj.remarks = ''; rowObj.remarks2=''; rowObj.followUpCount=0; rowObj.followedUpBy=null; rowObj.followedUpByName=null; }
+      else { rowObj.followUpCount = 1; rowObj.lastFollowUpAt = Date.now(); rowObj.followedUpBy = CURRENT_STAFF.id; rowObj.followedUpByName = CURRENT_STAFF.name; }
       renderExpiryList(EXPIRY_LIST_ALL);
-      fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, 'main');
+      fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, 'main', {remarks2: rowObj.remarks2, followUpCount: rowObj.followUpCount, lastFollowUpAt: rowObj.lastFollowUpAt});
       renderSummary();
     }
+  } else if(e.target.classList.contains('expListFollowBtnRe')){
+    const uname = e.target.dataset.uname;
+    const rowObj = RAW.find(rr=>rr.username===uname);
+    if(rowObj){ doReFollowUp(rowObj, 'main'); renderExpiryList(EXPIRY_LIST_ALL); renderSummary(); }
   }
 });
 document.getElementById('expiryListBody').addEventListener('change', (e)=>{
-  if(e.target.classList.contains('remarksInput')){
+  if(e.target.classList.contains('remarksInput2')){
+    const uname = e.target.dataset.uname;
+    const rowObj = RAW.find(rr=>rr.username===uname);
+    if(rowObj){ doRemarks2Change(rowObj, e.target.value, 'main'); renderSummary(); }
+  } else if(e.target.classList.contains('remarksInput')){
     if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
     const uname = e.target.dataset.uname;
     const rowObj = RAW.find(rr=>rr.username===uname);
@@ -1293,7 +1314,7 @@ document.getElementById('expiryListBody').addEventListener('change', (e)=>{
       rowObj.remarks = e.target.value;
       rowObj.followedUpBy = CURRENT_STAFF.id;
       rowObj.followedUpByName = CURRENT_STAFF.name;
-      fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, 'main');
+      fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, 'main', {remarks2: rowObj.remarks2, followUpCount: rowObj.followUpCount, lastFollowUpAt: rowObj.lastFollowUpAt, logActivity:false});
       renderSummary();
     }
   }
@@ -1331,8 +1352,8 @@ function renderModalCust(list){
   custBody.innerHTML = list.map(r=>`
     <tr>
       <td>${billedUsernameHtml(r.username)}</td>
-      <td><button class="followBtn ${r.followUp?'done':''}" data-uname="${r.username}">${r.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${window.__HIGH_RISK_DATA__ && window.__HIGH_RISK_DATA__.some(h=>normUser(h.Username)===normUser(r.username)) ? '<span class="hr-badge">HIGH RISK</span>' : ''}${is6GTaskUpgraded(r.username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
-      <td>${r.followUp ? remarksSelectHtml(r.username, r.remarks) : ''}</td>
+      <td>${followCellHtml('modalFollowBtn', r.username, r, (window.__HIGH_RISK_DATA__ && window.__HIGH_RISK_DATA__.some(h=>normUser(h.Username)===normUser(r.username)) ? '<span class="hr-badge">HIGH RISK</span>' : '') + (is6GTaskUpgraded(r.username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''))}</td>
+      <td>${r.followUp ? remarksCellHtml(r.username, r) : ''}</td>
       <td>${r.expiry}</td>
       <td>${r.plan||''}</td>
       <td>${r.bandwidth||''}</td>
@@ -1350,17 +1371,25 @@ document.getElementById('custModalBody').addEventListener('click', (e)=>{
     const rowObj = MODAL_GROUP.rows.find(rr=>rr.username===uname);
     if(rowObj){
       rowObj.followUp = !rowObj.followUp;
-      if(!rowObj.followUp){ rowObj.remarks = ''; rowObj.followedUpBy=null; rowObj.followedUpByName=null; }
-      else { rowObj.followedUpBy = CURRENT_STAFF.id; rowObj.followedUpByName = CURRENT_STAFF.name; }
+      if(!rowObj.followUp){ rowObj.remarks = ''; rowObj.remarks2=''; rowObj.followUpCount=0; rowObj.followedUpBy=null; rowObj.followedUpByName=null; }
+      else { rowObj.followUpCount = 1; rowObj.lastFollowUpAt = Date.now(); rowObj.followedUpBy = CURRENT_STAFF.id; rowObj.followedUpByName = CURRENT_STAFF.name; }
       renderModalCust(MODAL_LIST);
-      fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, 'main');
+      fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, 'main', {remarks2: rowObj.remarks2, followUpCount: rowObj.followUpCount, lastFollowUpAt: rowObj.lastFollowUpAt});
       renderSummary();
     }
+  } else if(e.target.classList.contains('modalFollowBtnRe')){
+    const uname = e.target.dataset.uname;
+    const rowObj = MODAL_GROUP.rows.find(rr=>rr.username===uname);
+    if(rowObj){ doReFollowUp(rowObj, 'main'); renderModalCust(MODAL_LIST); renderSummary(); }
   }
 });
 document.getElementById('custModalBody').addEventListener('change', (e)=>{
   if(!MODAL_GROUP) return;
-  if(e.target.classList.contains('remarksInput')){
+  if(e.target.classList.contains('remarksInput2')){
+    const uname = e.target.dataset.uname;
+    const rowObj = MODAL_GROUP.rows.find(rr=>rr.username===uname);
+    if(rowObj){ doRemarks2Change(rowObj, e.target.value, 'main'); renderSummary(); }
+  } else if(e.target.classList.contains('remarksInput')){
     if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
     const uname = e.target.dataset.uname;
     const rowObj = MODAL_GROUP.rows.find(rr=>rr.username===uname);
@@ -1368,7 +1397,7 @@ document.getElementById('custModalBody').addEventListener('change', (e)=>{
       rowObj.remarks = e.target.value;
       rowObj.followedUpBy = CURRENT_STAFF.id;
       rowObj.followedUpByName = CURRENT_STAFF.name;
-      fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, 'main');
+      fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, 'main', {remarks2: rowObj.remarks2, followUpCount: rowObj.followUpCount, lastFollowUpAt: rowObj.lastFollowUpAt, logActivity:false});
       renderSummary();
     }
   }
@@ -1407,7 +1436,8 @@ function exportCSV(rows, filename){
 }
 
 // ---------- Firebase sync (follow-up + remarks) ----------
-function fbSaveFollowup(username, followUp, remarks, kind){
+function fbSaveFollowup(username, followUp, remarks, kind, extra){
+  extra = extra || {};
   if(!fbdb){ setSyncStatus('Offline mode (Firebase not loaded)', true); return; }
   const basePath = (kind === 'highrisk') ? 'expiryTracker/highRiskFollowups' : (kind === 'unpaid') ? 'expiryTracker/unpaidFollowups' : (kind === 'ysd') ? 'expiryTracker/ysdFollowups' : (kind === 'winback') ? 'expiryTracker/winbackFollowups' : FB_PATH;
   try{
@@ -1416,6 +1446,9 @@ function fbSaveFollowup(username, followUp, remarks, kind){
       username: username,
       followUp: !!followUp,
       remarks: remarks || '',
+      remarks2: extra.remarks2 || '',
+      followUpCount: extra.followUpCount || (followUp ? 1 : 0),
+      lastFollowUpAt: extra.lastFollowUpAt || (followUp ? Date.now() : null),
       followedUpBy: CURRENT_STAFF ? CURRENT_STAFF.id : null,
       followedUpByName: CURRENT_STAFF ? CURRENT_STAFF.name : null,
       updatedAt: Date.now()
@@ -1423,17 +1456,40 @@ function fbSaveFollowup(username, followUp, remarks, kind){
       console.error('Firebase save failed', err);
       setSyncStatus('Sync failed — check Firebase rules', true);
     });
-    // also log an immutable activity event for audit trail
-    if(CURRENT_STAFF){
+    // also log an immutable activity event for audit trail (skip for silent remarks-only edits
+    // when explicitly marked as such, so editing a remark doesn't inflate follow-up counts)
+    if(CURRENT_STAFF && extra.logActivity !== false){
       fbdb.ref('expiryTracker/activityLog').push({
         staff: CURRENT_STAFF.id, name: CURRENT_STAFF.name, username, followUp: !!followUp,
-        remarks: remarks || '', kind: kind || 'main', ts: Date.now()
+        remarks: remarks || '', remarks2: extra.remarks2 || '', kind: kind || 'main',
+        isReFollowUp: !!extra.isReFollowUp, ts: Date.now()
       });
     }
   }catch(err){
     console.error('Firebase save error', err);
     setSyncStatus('Sync failed', true);
   }
+}
+
+// ---------- Shared re-follow-up / second-remarks helpers (used by every follow-up table) ----------
+function doReFollowUp(rowObj, kind){
+  if(!CURRENT_STAFF){ alert('Pahile login garnus.'); return; }
+  rowObj.followUpCount = (rowObj.followUpCount||1) + 1;
+  rowObj.lastFollowUpAt = Date.now();
+  rowObj.followedUpBy = CURRENT_STAFF.id;
+  rowObj.followedUpByName = CURRENT_STAFF.name;
+  fbSaveFollowup(rowObj.username, true, rowObj.remarks, kind, {
+    remarks2: rowObj.remarks2, followUpCount: rowObj.followUpCount, lastFollowUpAt: rowObj.lastFollowUpAt, isReFollowUp:true
+  });
+}
+function doRemarks2Change(rowObj, value, kind){
+  if(!CURRENT_STAFF){ alert('Pahile login garnus.'); return; }
+  rowObj.remarks2 = value;
+  rowObj.followedUpBy = CURRENT_STAFF.id;
+  rowObj.followedUpByName = CURRENT_STAFF.name;
+  fbSaveFollowup(rowObj.username, rowObj.followUp, rowObj.remarks, kind, {
+    remarks2: rowObj.remarks2, followUpCount: rowObj.followUpCount, lastFollowUpAt: rowObj.lastFollowUpAt, logActivity:false
+  });
 }
 
 function fbLoadAndMerge(){
@@ -1448,6 +1504,9 @@ function fbLoadAndMerge(){
         const rec = map[r.username];
         if(rec){
           r.followUp = !!rec.followUp; r.remarks = rec.remarks || '';
+          r.remarks2 = rec.remarks2 || '';
+          r.followUpCount = rec.followUpCount || (rec.followUp ? 1 : 0);
+          r.lastFollowUpAt = rec.lastFollowUpAt || null;
           r.followedUpBy = rec.followedUpBy || null;
           r.followedUpByName = rec.followedUpByName || null;
         }
@@ -1896,8 +1955,8 @@ function renderHighRisk(){
         <td>${u.ForeRevenue||''}</td>
         <td>${billedAmt}</td>
         <td>${maxDays}</td>
-        <td><button class="followBtn hrFollowBtn ${rec.followUp?'done':''}" data-uname="${u.Username}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${is6GTaskUpgraded(u.Username) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
-        <td>${rec.followUp ? remarksSelectHtml(u.Username, rec.remarks) : ''}</td>
+        <td>${followCellHtml('hrFollowBtn', u.Username, rec, is6GTaskUpgraded(u.Username) ? '<span class="sixg-badge">6G UPGRADED</span>' : '')}</td>
+        <td>${rec.followUp ? remarksCellHtml(u.Username, rec) : ''}</td>
       </tr>`;
   }
   tbody.innerHTML = sorted.map(rowHtml).join('');
@@ -1941,16 +2000,26 @@ document.getElementById('highRiskBody').addEventListener('click', (e)=>{
     const key = normUser(uname);
     const rec = HR_FOLLOWUPS[key] || { username: uname, followUp:false, remarks:'' };
     rec.followUp = !rec.followUp;
-    if(!rec.followUp){ rec.remarks=''; rec.followedUpBy=null; rec.followedUpByName=null; }
-    else { rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
+    if(!rec.followUp){ rec.remarks=''; rec.remarks2=''; rec.followUpCount=0; rec.followedUpBy=null; rec.followedUpByName=null; }
+    else { rec.followUpCount = 1; rec.lastFollowUpAt = Date.now(); rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
     HR_FOLLOWUPS[key] = rec;
-    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'highrisk');
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'highrisk', {remarks2: rec.remarks2, followUpCount: rec.followUpCount, lastFollowUpAt: rec.lastFollowUpAt});
     renderHighRisk();
     renderSummary();
+  } else if(e.target.classList.contains('hrFollowBtnRe')){
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = HR_FOLLOWUPS[key];
+    if(rec){ doReFollowUp(rec, 'highrisk'); HR_FOLLOWUPS[key] = rec; renderHighRisk(); renderSummary(); }
   }
 });
 document.getElementById('highRiskBody').addEventListener('change', (e)=>{
-  if(e.target.classList.contains('remarksInput')){
+  if(e.target.classList.contains('remarksInput2')){
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = HR_FOLLOWUPS[key];
+    if(rec){ doRemarks2Change(rec, e.target.value, 'highrisk'); HR_FOLLOWUPS[key] = rec; renderSummary(); }
+  } else if(e.target.classList.contains('remarksInput')){
     if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
     const uname = e.target.dataset.uname;
     const key = normUser(uname);
@@ -1958,7 +2027,7 @@ document.getElementById('highRiskBody').addEventListener('change', (e)=>{
     rec.remarks = e.target.value;
     rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name;
     HR_FOLLOWUPS[key] = rec;
-    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'highrisk');
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'highrisk', {remarks2: rec.remarks2, followUpCount: rec.followUpCount, lastFollowUpAt: rec.lastFollowUpAt, logActivity:false});
     renderSummary();
   }
 });
@@ -1969,9 +2038,25 @@ document.getElementById('highRiskBody').addEventListener('change', (e)=>{
   document.getElementById(id).addEventListener('change', ()=> renderHighRisk());
 });
 
-function remarksSelectHtml(uname, currentVal){
+function remarksSelectHtml(uname, currentVal, extraClass){
   const opts = REMARK_OPTIONS.map(o=>`<option value="${o}" ${o===currentVal?'selected':''}>${o}</option>`).join('');
-  return `<select class="remarksInput" data-uname="${uname}"><option value="" ${!currentVal?'selected':''}>-- Select --</option>${opts}</select>`;
+  return `<select class="remarksInput ${extraClass||''}" data-uname="${uname}"><option value="" ${!currentVal?'selected':''}>-- Select --</option>${opts}</select>`;
+}
+function remarksSelectHtml2(uname, currentVal, extraClass){
+  const opts = REMARK_OPTIONS.map(o=>`<option value="${o}" ${o===currentVal?'selected':''}>${o}</option>`).join('');
+  return `<select class="remarksInput2 ${extraClass||''}" data-uname="${uname}"><option value="" ${!currentVal?'selected':''}>-- Select 2nd remark --</option>${opts}</select>`;
+}
+// Combined "Remarks" + "Remarks 2" cell — used everywhere a follow-up row shows remarks
+function remarksCellHtml(uname, rec, extraClass1, extraClass2){
+  return `<div style="display:flex;flex-direction:column;gap:3px;">${remarksSelectHtml(uname, rec.remarks, extraClass1)}${remarksSelectHtml2(uname, rec.remarks2, extraClass2)}</div>`;
+}
+// Follow-up cell: main Mark/Followed-up button + (once followed up) a Re-follow-up tick that
+// logs a fresh contact event without un-marking the user, plus a small contact-count badge.
+function followCellHtml(btnClass, uname, rec, extraBadgesHtml){
+  const mainBtn = `<button class="followBtn ${btnClass} ${rec.followUp?'done':''}" data-uname="${uname}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>`;
+  const reBtn = rec.followUp ? `<button class="reFollowBtn ${btnClass}Re" data-uname="${uname}" title="Log another follow-up contact (keeps status as Followed up)">🔁 Re-follow-up</button>` : '';
+  const countBadge = (rec.followUp && rec.followUpCount > 1) ? `<span class="cat-pill" title="Total contacts">${rec.followUpCount}x contacted</span>` : '';
+  return `${mainBtn}${reBtn}${countBadge}${extraBadgesHtml||''}`;
 }
 
 // ---------- Staff-wise Summary Report ----------
@@ -2165,8 +2250,8 @@ function renderWinback(){
       <td>${x.diff}</td>
       <td>${x.pkg||'—'}</td>
       <td class="ysd-status-${billSt}">${billSt}</td>
-      <td><button class="followBtn winbackFollowBtn ${rec.followUp?'done':''}" data-uname="${x.u}">${rec.followUp?'✓ Followed up':'Mark follow-up'}</button>${is6GTaskUpgraded(x.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
-      <td>${rec.followUp ? remarksSelectHtml(x.u, rec.remarks) : ''}</td>
+      <td>${followCellHtml('winbackFollowBtn', x.u, rec, is6GTaskUpgraded(x.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : '')}</td>
+      <td>${rec.followUp ? remarksCellHtml(x.u, rec) : ''}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="6" class="empty">Billing Import ma yo range (-30 dekhi -2000) ko "Actual Diff" bhako user vetiena</td></tr>`;
 
@@ -2194,16 +2279,26 @@ document.getElementById('winbackBody').addEventListener('click', (e)=>{
     const key = normUser(uname);
     const rec = WINBACK_FOLLOWUPS[key] || { username: uname, followUp:false, remarks:'' };
     rec.followUp = !rec.followUp;
-    if(!rec.followUp){ rec.remarks=''; rec.followedUpBy=null; rec.followedUpByName=null; }
-    else { rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
+    if(!rec.followUp){ rec.remarks=''; rec.remarks2=''; rec.followUpCount=0; rec.followedUpBy=null; rec.followedUpByName=null; }
+    else { rec.followUpCount = 1; rec.lastFollowUpAt = Date.now(); rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
     WINBACK_FOLLOWUPS[key] = rec;
-    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'winback');
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'winback', {remarks2: rec.remarks2, followUpCount: rec.followUpCount, lastFollowUpAt: rec.lastFollowUpAt});
     renderWinback();
     renderSummary();
+  } else if(e.target.classList.contains('winbackFollowBtnRe')){
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = WINBACK_FOLLOWUPS[key];
+    if(rec){ doReFollowUp(rec, 'winback'); WINBACK_FOLLOWUPS[key] = rec; renderWinback(); renderSummary(); }
   }
 });
 document.getElementById('winbackBody').addEventListener('change', (e)=>{
-  if(e.target.classList.contains('remarksInput')){
+  if(e.target.classList.contains('remarksInput2')){
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = WINBACK_FOLLOWUPS[key];
+    if(rec){ doRemarks2Change(rec, e.target.value, 'winback'); WINBACK_FOLLOWUPS[key] = rec; renderSummary(); }
+  } else if(e.target.classList.contains('remarksInput')){
     if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
     const uname = e.target.dataset.uname;
     const key = normUser(uname);
@@ -2211,7 +2306,7 @@ document.getElementById('winbackBody').addEventListener('change', (e)=>{
     rec.remarks = e.target.value;
     rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name;
     WINBACK_FOLLOWUPS[key] = rec;
-    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'winback');
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'winback', {remarks2: rec.remarks2, followUpCount: rec.followUpCount, lastFollowUpAt: rec.lastFollowUpAt, logActivity:false});
     renderSummary();
   }
 });
@@ -2680,8 +2775,8 @@ function renderYSDDetail(){
       <td>${d.expiry||'—'}</td>
       <td class="ysd-num">${d.rev? d.rev.toLocaleString('en-US',{maximumFractionDigits:0}) : '—'}</td>
       <td class="ysd-status-${st}">${st}</td>
-      <td><button class="followBtn ysdFollowBtn ${rec.followUp?'done':''}" data-uname="${d.u}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${is6GTaskUpgraded(d.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
-      <td>${rec.followUp ? remarksSelectHtml(d.u, rec.remarks) : ''}</td>
+      <td>${followCellHtml('ysdFollowBtn', d.u, rec, is6GTaskUpgraded(d.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : '')}</td>
+      <td>${rec.followUp ? remarksCellHtml(d.u, rec) : ''}</td>
     `;
     frag.appendChild(tr);
   });
@@ -2699,16 +2794,26 @@ document.getElementById('ysdDetailTable').addEventListener('click', (e)=>{
     const key = normUser(uname);
     const rec = YSD_FOLLOWUPS[key] || { username: uname, followUp:false, remarks:'' };
     rec.followUp = !rec.followUp;
-    if(!rec.followUp){ rec.remarks=''; rec.followedUpBy=null; rec.followedUpByName=null; }
-    else { rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
+    if(!rec.followUp){ rec.remarks=''; rec.remarks2=''; rec.followUpCount=0; rec.followedUpBy=null; rec.followedUpByName=null; }
+    else { rec.followUpCount = 1; rec.lastFollowUpAt = Date.now(); rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
     YSD_FOLLOWUPS[key] = rec;
-    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'ysd');
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'ysd', {remarks2: rec.remarks2, followUpCount: rec.followUpCount, lastFollowUpAt: rec.lastFollowUpAt});
     renderYSDDetail();
     renderSummary();
+  } else if(e.target.classList.contains('ysdFollowBtnRe')){
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = YSD_FOLLOWUPS[key];
+    if(rec){ doReFollowUp(rec, 'ysd'); YSD_FOLLOWUPS[key] = rec; renderYSDDetail(); renderSummary(); }
   }
 });
 document.getElementById('ysdDetailTable').addEventListener('change', (e)=>{
-  if(e.target.classList.contains('remarksInput')){
+  if(e.target.classList.contains('remarksInput2')){
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = YSD_FOLLOWUPS[key];
+    if(rec){ doRemarks2Change(rec, e.target.value, 'ysd'); YSD_FOLLOWUPS[key] = rec; renderSummary(); }
+  } else if(e.target.classList.contains('remarksInput')){
     if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
     const uname = e.target.dataset.uname;
     const key = normUser(uname);
@@ -2716,7 +2821,7 @@ document.getElementById('ysdDetailTable').addEventListener('change', (e)=>{
     rec.remarks = e.target.value;
     rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name;
     YSD_FOLLOWUPS[key] = rec;
-    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'ysd');
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'ysd', {remarks2: rec.remarks2, followUpCount: rec.followUpCount, lastFollowUpAt: rec.lastFollowUpAt, logActivity:false});
     renderSummary();
   }
 });
@@ -3051,8 +3156,8 @@ function renderUnpaidDetail(){
       <td class="ysd-num">${days===null?'—':days}</td>
       <td class="ysd-num">${d.amt ? d.amt.toLocaleString('en-IN',{maximumFractionDigits:0}) : '—'}</td>
       <td class="ysd-status-${st==='Matched'?'Matched':'Remaining'}">${st}</td>
-      <td><button class="followBtn unpaidFollowBtn ${rec.followUp?'done':''}" data-uname="${d.u}">${rec.followUp ? '✓ Followed up' : 'Mark follow-up'}</button>${is6GTaskUpgraded(d.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : ''}</td>
-      <td>${rec.followUp ? remarksSelectHtml(d.u, rec.remarks).replace('remarksInput', 'remarksInput unpaidRemarksInput') : ''}</td>
+      <td>${followCellHtml('unpaidFollowBtn', d.u, rec, is6GTaskUpgraded(d.u) ? '<span class="sixg-badge">6G UPGRADED</span>' : '')}</td>
+      <td>${rec.followUp ? remarksCellHtml(d.u, rec, 'unpaidRemarksInput', 'unpaidRemarksInput2') : ''}</td>
     `;
     frag.appendChild(tr);
   });
@@ -3077,15 +3182,26 @@ document.getElementById('unpaidDetailTable').addEventListener('click', (e)=>{
     const key = normUser(uname);
     const rec = UNPAID_FOLLOWUPS[key] || { username: uname, followUp:false, remarks:'' };
     rec.followUp = !rec.followUp;
-    if(!rec.followUp){ rec.remarks=''; rec.followedUpBy=null; rec.followedUpByName=null; }
-    else { rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
+    if(!rec.followUp){ rec.remarks=''; rec.remarks2=''; rec.followUpCount=0; rec.followedUpBy=null; rec.followedUpByName=null; }
+    else { rec.followUpCount = 1; rec.lastFollowUpAt = Date.now(); rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name; }
     UNPAID_FOLLOWUPS[key] = rec;
-    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'unpaid');
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'unpaid', {remarks2: rec.remarks2, followUpCount: rec.followUpCount, lastFollowUpAt: rec.lastFollowUpAt});
     renderUnpaid();
+    renderSummary();
+  } else if(e.target.classList.contains('unpaidFollowBtnRe')){
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = UNPAID_FOLLOWUPS[key];
+    if(rec){ doReFollowUp(rec, 'unpaid'); UNPAID_FOLLOWUPS[key] = rec; renderUnpaid(); renderSummary(); }
   }
 });
 document.getElementById('unpaidDetailTable').addEventListener('change', (e)=>{
-  if(e.target.classList.contains('unpaidRemarksInput')){
+  if(e.target.classList.contains('unpaidRemarksInput2')){
+    const uname = e.target.dataset.uname;
+    const key = normUser(uname);
+    const rec = UNPAID_FOLLOWUPS[key];
+    if(rec){ doRemarks2Change(rec, e.target.value, 'unpaid'); UNPAID_FOLLOWUPS[key] = rec; renderSummary(); }
+  } else if(e.target.classList.contains('unpaidRemarksInput')){
     if(!CURRENT_STAFF){ alert('Pahile login garnus.'); e.target.value=''; return; }
     const uname = e.target.dataset.uname;
     const key = normUser(uname);
@@ -3093,7 +3209,8 @@ document.getElementById('unpaidDetailTable').addEventListener('change', (e)=>{
     rec.remarks = e.target.value;
     rec.followedUpBy = CURRENT_STAFF.id; rec.followedUpByName = CURRENT_STAFF.name;
     UNPAID_FOLLOWUPS[key] = rec;
-    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'unpaid');
+    fbSaveFollowup(uname, rec.followUp, rec.remarks, 'unpaid', {remarks2: rec.remarks2, followUpCount: rec.followUpCount, lastFollowUpAt: rec.lastFollowUpAt, logActivity:false});
+    renderSummary();
   }
 });
 
