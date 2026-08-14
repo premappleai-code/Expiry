@@ -158,7 +158,7 @@ button:hover{ filter:brightness(0.95); }
 #billingFileInput{ display:none; }
 #sixgTaskFileInput{ display:none; }
 
-.wrap{ padding:20px 24px 60px; max-width:1400px; margin:0 auto; }
+.wrap{ padding:20px 24px 60px; max-width:100%; margin:0; }
 
 .kpis{
   display:grid;
