@@ -154,9 +154,16 @@ button.ghost{
   font-weight:400;
 }
 button:hover{ filter:brightness(0.95); }
+.retentionLink{
+  font-family:inherit; font-size:12px; padding:6px 12px; border-radius:4px;
+  border:1px solid var(--border); background:#fff; color:var(--blue-dark);
+  font-weight:600; text-decoration:none; display:inline-block; white-space:nowrap;
+}
+.retentionLink:hover{ filter:brightness(0.95); border-color:var(--blue); }
 #fileInput{ display:none; }
 #billingFileInput{ display:none; }
 #sixgTaskFileInput{ display:none; }
+#cfuFileInput{ display:none; }
 
 .wrap{ padding:20px 24px 60px; max-width:100%; margin:0; }
 
@@ -386,6 +393,7 @@ select.remarksInput{
 /* ---- Billing-matched (green) username highlight, used across tabs ---- */
 .paid-user{ color:var(--green); font-weight:700; }
 .paid-badge{ display:inline-block; font-size:10px; font-weight:700; color:#107C10; background:#DFF6DD; border-radius:8px; padding:0 6px; margin-left:5px; }
+.cfu-note{ font-size:10px; color:#8764B8; font-style:italic; margin-top:2px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:help; }
 
 /* ---- Customer list modal ---- */
 #custModalOverlay{
@@ -404,6 +412,7 @@ select.remarksInput{
   cursor:pointer; padding:2px 8px; line-height:1;
 }
 #custModalClose:hover{ color:var(--red); filter:none; }
+
 </style>
 </head>
 <body>
@@ -441,8 +450,11 @@ select.remarksInput{
     <input type="file" id="billingFileInput" accept=".xlsx,.xls,.csv">
     <button class="secondary" id="sixgTaskImportBtn">6G Task Import</button>
     <input type="file" id="sixgTaskFileInput" accept=".xlsx,.xls,.csv">
+    <button class="secondary" id="cfuImportBtn">CFU Import</button>
+    <input type="file" id="cfuFileInput" accept=".xlsx,.xls,.csv">
     <button class="ghost" id="exportAllBtn">Export CSV</button>
     <button class="secondary" id="refreshBtn" title="Firebase bata sabai data (billing, unpaid, YSD, high-risk, activity log) feri load garcha">🔄 Refresh</button>
+    <a href="https://officeshukla29-sudo.github.io/Forecastvs-retention/" target="_blank" rel="noopener" class="retentionLink">Go to Retention Dash ↗</a>
     <span id="staffBadge" style="display:none;"></span>
   </div>
 </div>
@@ -946,6 +958,9 @@ select.remarksInput{
     </div>
   </div>
 
+  <!-- ============ MTD DASHBOARD TAB (integrated with follow-up system) ============ -->
+  
+
 </div>
 
 <!-- ============ Customer list modal (opens on OLT row click) ============ -->
@@ -990,6 +1005,7 @@ let BILLING_PACKAGE = {};       // normalized username -> new/current package na
 let BILLING_ACTUAL_DIFF = {};   // normalized username -> "Actual Diff" value (if billing file has this column) — used for Winback detection
 let BILLING_MAXDAYS = {};       // normalized username -> "Max Days" value (if billing file has this column)
 let SIXG_TASK_USERS = new Set(); // normalized usernames from imported "6G Task Details" file — confirmed upgraded to 6G
+let CFU_DATA = {}; // normalized username -> {remarks, manualRemarks, followBy, followDate} — from imported CFU (Call Follow-Up) file, shown under username everywhere
 let SIXG_TASK_META = { fileName:'', count:0 };
 let BILLING_META = { fileName:'', count:0 };
 let HR_FOLLOWUPS = {};          // normalized username -> {username, followUp, remarks, followedUpBy, followedUpByName} for High-Risk list
@@ -1017,10 +1033,19 @@ function is6GTaskUpgraded(username){
 function isWinbackConverted(username){
   return isWinback(username) && isBilled(username);
 }
+function cfuNoteHtml(username){
+  const rec = CFU_DATA[normUser(username)];
+  if(!rec) return '';
+  const txt = rec.remarks || rec.manualRemarks || '';
+  if(!txt) return '';
+  const tooltip = [rec.remarks, rec.manualRemarks].filter(Boolean).join(' — ').replace(/"/g,'&quot;');
+  return `<div class="cfu-note" title="${tooltip}${rec.followBy?(' · by '+rec.followBy):''}${rec.followDate?(' · '+rec.followDate):''}">CFU: ${txt}</div>`;
+}
 function billedUsernameHtml(username){
-  return isBilled(username)
+  const base = isBilled(username)
     ? `<span class="paid-user">${username}</span><span class="paid-badge">BILLED</span>`
     : username;
+  return base + cfuNoteHtml(username);
 }
 
 // ---------- OLT extraction ----------
@@ -1762,6 +1787,94 @@ function fbLoadSixgTaskData(){
 }
 fbLoadSixgTaskData();
 
+// ---------- CFU Import: call-followup remarks from the CRM export, shown under every username ----------
+document.getElementById('cfuImportBtn').addEventListener('click', ()=> document.getElementById('cfuFileInput').click());
+document.getElementById('cfuFileInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    const data = new Uint8Array(ev.target.result);
+    const wb = XLSX.read(data, {type:'array', cellDates:true});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    let json = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    if(!json.length || !findKey(json[0], ['username'])){
+      const raw = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+      const headerRowIdx = raw.findIndex(row => row.some(c => String(c).toLowerCase().includes('username')));
+      if(headerRowIdx >= 0){
+        json = XLSX.utils.sheet_to_json(sheet, {range:headerRowIdx, defval:''});
+      }
+    }
+    if(!json.length){
+      alert('CFU file ma USERNAME column vetiena.');
+      return;
+    }
+    const userKey = findKey(json[0], ['username']);
+    if(!userKey){
+      alert('CFU file ma USERNAME column vetiena.');
+      return;
+    }
+    const remarksKey = findKey(json[0], ['remarks']);
+    const manualKey = findKey(json[0], ['manual remarks']);
+    const followDateKey = findKey(json[0], ['follow date']);
+    const followByKey = findKey(json[0], ['follow by']);
+    // keep only the LATEST entry per username (by Follow Date)
+    const latest = {};
+    json.forEach(r=>{
+      const u = normUser(r[userKey]);
+      if(!u) return;
+      const dateVal = followDateKey ? r[followDateKey] : null;
+      const ts = dateVal instanceof Date ? dateVal.getTime() : (dateVal ? new Date(dateVal).getTime() : 0);
+      if(!latest[u] || ts >= latest[u]._ts){
+        latest[u] = {
+          remarks: remarksKey ? String(r[remarksKey]||'').trim() : '',
+          manualRemarks: manualKey ? String(r[manualKey]||'').trim() : '',
+          followBy: followByKey ? String(r[followByKey]||'').trim() : '',
+          followDate: dateVal instanceof Date ? dateVal.toLocaleDateString('en-CA') : (dateVal||''),
+          _ts: isNaN(ts) ? 0 : ts
+        };
+      }
+    });
+    CFU_DATA = {};
+    Object.keys(latest).forEach(u=>{ delete latest[u]._ts; CFU_DATA[u] = latest[u]; });
+    fbSaveCfuData(file.name);
+    render();
+    renderHighRisk();
+    renderYSD();
+    renderUnpaid();
+    renderWinback();
+    renderSummary();
+    alert(`CFU Import safal — ${Object.keys(CFU_DATA).length} unique users. Follow-up list haru ma "CFU: ..." note dekhincha.`);
+  };
+  reader.readAsArrayBuffer(file);
+});
+function fbSaveCfuData(fileName){
+  if(!fbdb) return;
+  try{
+    fbdb.ref('expiryTracker/cfuData').set({
+      data: CFU_DATA,
+      fileName: fileName || '',
+      updatedAt: Date.now(),
+      updatedBy: CURRENT_STAFF ? CURRENT_STAFF.id : null
+    }).catch(err=> console.error('CFU sync failed', err));
+  }catch(err){ console.error('CFU sync error', err); }
+}
+function fbLoadCfuData(){
+  if(!fbdb) return;
+  fbdb.ref('expiryTracker/cfuData').once('value').then(snap=>{
+    const d = snap.val();
+    if(!d || !d.data) return;
+    CFU_DATA = d.data;
+    render();
+    renderHighRisk();
+    renderYSD();
+    renderUnpaid();
+    renderWinback();
+    renderSummary();
+  }).catch(err=> console.error('CFU load failed', err));
+}
+fbLoadCfuData();
+
 document.getElementById('exportAllBtn').addEventListener('click', ()=>{
   exportCSV(filteredRows(), 'expired_users_all.csv');
 });
@@ -2246,7 +2359,7 @@ function renderWinback(){
     const rec = WINBACK_FOLLOWUPS[x.u] || {};
     const billSt = BILLING_PAID.has(x.u) ? 'Matched' : 'Remaining';
     return `<tr>
-      <td>${x.u}</td>
+      <td>${x.u}${cfuNoteHtml(x.u)}</td>
       <td>${x.diff}</td>
       <td>${x.pkg||'—'}</td>
       <td class="ysd-status-${billSt}">${billSt}</td>
@@ -3247,6 +3360,7 @@ document.getElementById('refreshBtn').addEventListener('click', ()=>{
       fbLoadYsdFollowups();  // YSD followups
       fbLoadUnpaidData();    // unpaid import + followups
       fbLoadSixgTaskData();  // 6G task import
+      fbLoadCfuData();       // CFU import
     })
     .finally(()=>{
       setTimeout(()=>{
@@ -3260,6 +3374,7 @@ document.getElementById('refreshBtn').addEventListener('click', ()=>{
       }, 600); // small delay so Firebase fetches have a moment to land
     });
 });
+
 </script>
 </body>
 </html>
