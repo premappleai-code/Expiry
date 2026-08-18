@@ -774,14 +774,14 @@ select.remarksInput{
 
     <div class="panel" id="dayWiseSummaryWrap">
       <div class="panel-head">
-        <h2>📅 Day-wise Follow-up Summary (All Sections Combined)</h2>
-        <span class="sub" style="font-size:11px;color:var(--text-soft);">Source/Category filter (tala) le yesलाई pani affect garcha — Day filter le yo table लाई affect gardaina, kina ki yo nai sabai din ko breakdown ho</span>
+        <h2>📅 Daily / Monthly Follow-up Summary (All Sections Combined)</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Source/Category/OLT/View filter (tala) le yesलाई affect garcha — Day filter le yo table लाई affect gardaina, kina ki yo nai sabai period ko breakdown ho</span>
       </div>
       <div class="panel-body">
         <div class="scrollx">
         <table>
           <thead><tr>
-            <th>Date</th><th>Total Follow-ups</th><th>Source Breakdown</th><th>Converted (Paid)</th><th>Conversion Rate</th><th>Amount Recovered (NPR)</th>
+            <th id="dayWiseSummaryHead">Date</th><th>Total Follow-ups</th><th>Source Breakdown</th><th>Converted (Paid)</th><th>Conversion Rate</th><th>6G Upgrades</th><th>Amount Recovered (NPR)</th>
           </tr></thead>
           <tbody id="dayWiseSummaryTbody"></tbody>
         </table>
@@ -862,6 +862,23 @@ select.remarksInput{
       </div>
     </div>
 
+    <div class="panel" id="oltCategoryPanelWrap">
+      <div class="panel-head">
+        <h2>🗺️ OLT-wise Category Breakdown</h2>
+        <span class="sub" style="font-size:11px;color:var(--text-soft);">Har OLT ma High Risk, Expiry, YSD, Unpaid, Winback, ra 6G Upgrade kati bhayo — ek najar ma. Mathi ko Category/Day/View filter yaha pani lागू huncha.</span>
+      </div>
+      <div class="panel-body">
+        <div class="scrollx">
+        <table>
+          <thead><tr>
+            <th>OLT</th><th>Total Follow-ups</th><th>Expiry</th><th>High Risk</th><th>YSD</th><th>Unpaid</th><th>Winback</th><th>6G Upgrades</th><th>Converted (Paid)</th>
+          </tr></thead>
+          <tbody id="oltCategoryTbody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
     <div class="panel" id="winbackPanelWrap">
       <div class="panel-head">
         <h2>🎯 Winback Users (Billing Actual Diff -30 to -2000)</h2>
@@ -935,6 +952,17 @@ select.remarksInput{
           <div>
             <label for="summaryDayFilter" style="font-size:11px;color:var(--text-soft);display:block;margin-bottom:3px;">Day</label>
             <select id="summaryDayFilter"><option value="ALL">All Days</option></select>
+          </div>
+          <div>
+            <label for="summaryOltFilterX" style="font-size:11px;color:var(--text-soft);display:block;margin-bottom:3px;">OLT</label>
+            <select id="summaryOltFilterX"><option value="ALL">All OLTs</option></select>
+          </div>
+          <div>
+            <label for="summaryPeriodMode" style="font-size:11px;color:var(--text-soft);display:block;margin-bottom:3px;">View</label>
+            <select id="summaryPeriodMode">
+              <option value="daily">Daily</option>
+              <option value="monthly">Monthly</option>
+            </select>
           </div>
         </div>
         <div id="summaryPanel"></div>
@@ -1057,6 +1085,31 @@ function deriveOLT(username){
   if(/vmad|vmd|vamd|vmqd/.test(suffix))   return 'VMAD01';
   if(/rish/.test(suffix))                 return 'RISH01';
   return 'OTHER (' + suffix.toUpperCase() + ')';
+}
+// Resolve the OLT for ANY username regardless of which follow-up source it came from —
+// checks the real datasets first (most accurate), falls back to suffix-based derivation.
+const _userOltCache = {};
+function getUserOLT(username){
+  const key = normUser(username);
+  if(_userOltCache[key] !== undefined) return _userOltCache[key];
+  let olt = null;
+  const rawRow = RAW.find(r=> normUser(r.username)===key);
+  if(rawRow) olt = rawRow.olt;
+  if(!olt){
+    const hrRow = (window.__HIGH_RISK_DATA__||[]).find(u=> normUser(u.Username)===key);
+    if(hrRow) olt = hrRow.OLT;
+  }
+  if(!olt){
+    const ysdRow = YSD_DATA.find(d=> normUser(d.u)===key);
+    if(ysdRow) olt = ysdRow.olt;
+  }
+  if(!olt){
+    const unpaidRow = UNPAID_DATA.find(d=> normUser(d.u)===key);
+    if(unpaidRow) olt = unpaidRow.olt;
+  }
+  if(!olt) olt = deriveOLT(username);
+  _userOltCache[key] = olt;
+  return olt;
 }
 
 // ---------- normalize a raw imported row into our schema ----------
@@ -2499,21 +2552,28 @@ function renderSummary(){
       <div class="kpi amber"><div class="val">${fmtNum(hrFollowed)}/${fmtNum(scopeHR.length)}</div><div class="lbl">High Risk Followed-up</div></div>
     </div>`;
 
-  // ---- Staff-wise table, driven by ACTIVITY_LOG + Source/Category/Day filters ----
+  // ---- Staff-wise table, driven by ACTIVITY_LOG + Source/Category/Day/OLT filters ----
   const srcSel = document.getElementById('summarySourceFilter');
   const catSel = document.getElementById('summaryCategoryFilter');
   const daySel = document.getElementById('summaryDayFilter');
+  const oltSelX = document.getElementById('summaryOltFilterX');
+  const periodSel = document.getElementById('summaryPeriodMode');
   const srcFilter = srcSel ? srcSel.value : 'ALL';
   const catFilter = catSel ? catSel.value : 'ALL';
   const dayFilter = daySel ? daySel.value : 'ALL';
+  const oltFilterX = oltSelX ? oltSelX.value : 'ALL';
+  const periodMode = periodSel ? periodSel.value : 'daily';
 
   function entryDay(ts){ const d = new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  function entryMonth(ts){ const d = new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+  function entryPeriod(ts){ return periodMode==='monthly' ? entryMonth(ts) : entryDay(ts); }
 
   const filteredLog = ACTIVITY_LOG.filter(e=>{
     if(!e.followUp) return false; // only count actual "marked done" actions
     if(srcFilter!=='ALL' && (e.kind||'main')!==srcFilter) return false;
     if(catFilter!=='ALL' && (e.remarks||'Uncategorized')!==catFilter) return false;
     if(dayFilter!=='ALL' && entryDay(e.ts)!==dayFilter) return false;
+    if(oltFilterX!=='ALL' && getUserOLT(e.username)!==oltFilterX) return false;
     return true;
   });
 
@@ -2558,16 +2618,17 @@ function renderSummary(){
   const KIND_LABELS = { main: 'Expiry', highrisk: 'High Risk', unpaid: 'Unpaid', ysd: 'Year Start Disable', winback: 'Winback' };
   const KIND_COLORS = { main: '#118DFF', highrisk: '#D13438', unpaid: '#FFB900', ysd: '#107C10', winback: '#8764B8' };
 
-  // ---- Day-wise Follow-up Summary (all sections combined) — respects Source/Category, ignores Day filter ----
+  // ---- Day/Month-wise Follow-up Summary (all sections combined) — respects Source/Category/OLT, ignores Day filter (it IS the period breakdown) ----
   const logForDayWise = ACTIVITY_LOG.filter(e=>{
     if(!e.followUp) return false;
     if(srcFilter!=='ALL' && (e.kind||'main')!==srcFilter) return false;
     if(catFilter!=='ALL' && (e.remarks||'Uncategorized')!==catFilter) return false;
+    if(oltFilterX!=='ALL' && getUserOLT(e.username)!==oltFilterX) return false;
     return true;
   });
   const dayGroups = {};
   logForDayWise.forEach(e=>{
-    const dk = entryDay(e.ts);
+    const dk = entryPeriod(e.ts);
     if(!dayGroups[dk]) dayGroups[dk] = { total:0, bySrc:{}, users:new Set() };
     dayGroups[dk].total++;
     const src = KIND_LABELS[e.kind] || 'Expiry';
@@ -2575,12 +2636,15 @@ function renderSummary(){
     dayGroups[dk].users.add(normUser(e.username));
   });
   const dayWiseTbody = document.getElementById('dayWiseSummaryTbody');
+  const dayWiseHead = document.getElementById('dayWiseSummaryHead');
+  if(dayWiseHead) dayWiseHead.textContent = periodMode==='monthly' ? 'Month' : 'Date';
   if(dayWiseTbody){
     const dayKeys = Object.keys(dayGroups).sort().reverse();
     dayWiseTbody.innerHTML = dayKeys.map(dk=>{
       const info = dayGroups[dk];
       const usersArr = [...info.users];
       const converted = usersArr.filter(u=> BILLING_PAID.has(u));
+      const upgraded6g = usersArr.filter(u=> is6GTaskUpgraded(u));
       const rate = usersArr.length ? ((converted.length/usersArr.length)*100).toFixed(1)+'%' : '—';
       const amtRecovered = converted.reduce((s,u)=> s + (BILLING_AMOUNT[u]||0), 0);
       const srcPills = Object.entries(info.bySrc).map(([k,v])=>{
@@ -2593,9 +2657,49 @@ function renderSummary(){
         <td>${srcPills}</td>
         <td style="color:var(--green);font-weight:600">${fmtNum(converted.length)}</td>
         <td>${rate}</td>
+        <td style="color:#8764B8;font-weight:600">${fmtNum(upgraded6g.length)}</td>
         <td>${fmtNum(amtRecovered)}</td>
       </tr>`;
-    }).join('') || `<tr><td colspan="6" class="empty">Yo filter ma kunai follow-up activity chaina</td></tr>`;
+    }).join('') || `<tr><td colspan="7" class="empty">Yo filter ma kunai follow-up activity chaina</td></tr>`;
+  }
+
+  // ---- OLT-wise Category Breakdown — respects Category/Day/View filter, shows ALL OLTs regardless of the OLT filter ----
+  const oltCatTbody = document.getElementById('oltCategoryTbody');
+  if(oltCatTbody){
+    const logForOltCat = ACTIVITY_LOG.filter(e=>{
+      if(!e.followUp) return false;
+      if(catFilter!=='ALL' && (e.remarks||'Uncategorized')!==catFilter) return false;
+      if(dayFilter!=='ALL' && entryDay(e.ts)!==dayFilter) return false;
+      return true;
+    });
+    const oltGroups = {};
+    logForOltCat.forEach(e=>{
+      const olt = getUserOLT(e.username);
+      if(!oltGroups[olt]) oltGroups[olt] = { total:0, byKind:{main:0,highrisk:0,unpaid:0,ysd:0,winback:0}, users:new Set(), sixgUsers:new Set() };
+      oltGroups[olt].total++;
+      const k = e.kind || 'main';
+      oltGroups[olt].byKind[k] = (oltGroups[olt].byKind[k]||0) + 1;
+      const un = normUser(e.username);
+      oltGroups[olt].users.add(un);
+      if(is6GTaskUpgraded(un)) oltGroups[olt].sixgUsers.add(un);
+    });
+    const oltKeys = Object.keys(oltGroups).sort((a,b)=> oltGroups[b].total - oltGroups[a].total);
+    oltCatTbody.innerHTML = oltKeys.map(olt=>{
+      const g = oltGroups[olt];
+      const usersArr = [...g.users];
+      const converted = usersArr.filter(u=> BILLING_PAID.has(u));
+      return `<tr>
+        <td><b>${olt}</b></td>
+        <td>${fmtNum(g.total)}</td>
+        <td>${fmtNum(g.byKind.main||0)}</td>
+        <td>${fmtNum(g.byKind.highrisk||0)}</td>
+        <td>${fmtNum(g.byKind.ysd||0)}</td>
+        <td>${fmtNum(g.byKind.unpaid||0)}</td>
+        <td>${fmtNum(g.byKind.winback||0)}</td>
+        <td style="color:#8764B8;font-weight:600">${fmtNum(g.sixgUsers.size)}</td>
+        <td style="color:var(--green);font-weight:600">${fmtNum(converted.length)}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="9" class="empty">Yo filter ma kunai follow-up activity chaina</td></tr>`;
   }
 
   const staffStats = {}; // id -> {name, followUps, categories:{}, sources:{}, users:Set, collected:0}
@@ -2695,6 +2799,8 @@ function populateSummaryFilters(){
   const srcSel = document.getElementById('summarySourceFilter');
   const catSel = document.getElementById('summaryCategoryFilter');
   const daySel = document.getElementById('summaryDayFilter');
+  const oltSelX = document.getElementById('summaryOltFilterX');
+  const periodSel = document.getElementById('summaryPeriodMode');
   if(srcSel && !srcSel._wired){ srcSel.addEventListener('change', renderSummary); srcSel._wired = true; }
   if(catSel && catSel.options.length <= 1){
     REMARK_OPTIONS.forEach(o=>{
@@ -2713,6 +2819,17 @@ function populateSummaryFilters(){
     });
     if(!daySel._wired){ daySel.addEventListener('change', renderSummary); daySel._wired = true; }
   }
+  if(oltSelX){
+    const olts = [...new Set(ACTIVITY_LOG.map(e=> getUserOLT(e.username)))].sort();
+    const existing = new Set([...oltSelX.options].map(o=>o.value));
+    olts.forEach(o=>{
+      if(existing.has(o)) return;
+      const opt = document.createElement('option'); opt.value = o; opt.textContent = o;
+      oltSelX.appendChild(opt);
+    });
+    if(!oltSelX._wired){ oltSelX.addEventListener('change', renderSummary); oltSelX._wired = true; }
+  }
+  if(periodSel && !periodSel._wired){ periodSel.addEventListener('change', renderSummary); periodSel._wired = true; }
 }
 
 function fbLoadActivityLog(){
